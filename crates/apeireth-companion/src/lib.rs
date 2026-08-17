@@ -82,6 +82,7 @@ pub mod presence; // 内心状态频道 (PresenceEvent: emotion/initiative/dream
 pub mod principles;
 pub mod proactive;
 pub mod proactive_memory; // W4: 记忆主动推销 (预期话题分类 + 预载检索道 + ProactiveBlock 注入)
+pub mod intent_brier; // W6: 意图理解准确率 Brier 自我诊断 (滚动窗口 + 趋势 + 领域诊断, 复用 oracle Brier 公式)
 pub mod reflection;
 pub mod runtime_capabilities; // Core Capability Expansion: Runtime Capability Manifest (能力发现契约, 区别于 capability.rs 的 AI 演化提案)
 pub mod suites;
@@ -144,6 +145,12 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub use actions::{select_action, Action, CapabilityCatalog};
+pub use intent_brier::{
+    brier_score, compute_report, compute_trend, compute_window, domain_diagnostics,
+    mean_brier, render_report, BrierTrend, BrierWindow, DomainDiagnostic, FeedbackOutcome,
+    IntentDiagnosticReport, IntentLedger, IntentPrediction, IntentRecord, DEFAULT_WINDOWS,
+    DEFAULT_LOW_CALIBRATION_THRESHOLD,
+};
 pub use assemble::{CompanionApp, DeepRecall, DialogSummarizer, ExperienceRefiner};
 pub use bond::{Bond, BondCharacter, BondDepth, BondStage};
 pub use capability::{
