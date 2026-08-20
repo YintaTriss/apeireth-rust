@@ -230,7 +230,9 @@ fn real_start(
         // 0.9.7 krun_add_disk2 5 args: ctx, path, format, flags, sync
         //   0 装期: 0 -> format (无 format hint), 0u32 -> flags (默认), false -> sync (不阻塞)
         // std::ptr::null::<i8>() 返 *const i8 (匹配 FFI 形参)
-        let rc = unsafe { libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false) };
+        let rc = unsafe {
+            libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false)
+        };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx) };
             return Err(format!("krun_add_disk2 rootfs 失败 (rc={rc})"));
@@ -243,7 +245,9 @@ fn real_start(
             .map_err(|e| format!("kernel 路径含 null 字节: {e}"))?;
         // 0.9.7 krun_set_kernel 5 args: ctx, kernel, initrd, cmdline, flags
         //   0 装期: 0u32 -> initrd (无), std::ptr::null::<i8>() -> cmdline (无), 0u32 -> flags
-        let rc = unsafe { libkrun_sys::krun_set_kernel(ctx, cstr.as_ptr(), 0u32, std::ptr::null::<i8>(), 0u32) };
+        let rc = unsafe {
+            libkrun_sys::krun_set_kernel(ctx, cstr.as_ptr(), 0u32, std::ptr::null::<i8>(), 0u32)
+        };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx) };
             return Err(format!("krun_set_kernel 失败 (rc={rc})"));
@@ -255,7 +259,9 @@ fn real_start(
         let cstr = CString::new(initrd.to_string_lossy().into_owned())
             .map_err(|e| format!("initrd 路径含 null 字节: {e}"))?;
         // 0.9.7 krun_add_disk2 5 args: ctx, path, format, flags, sync
-        let rc = unsafe { libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false) };
+        let rc = unsafe {
+            libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false)
+        };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx) };
             return Err(format!("krun_add_disk2 initrd 失败 (rc={rc})"));
