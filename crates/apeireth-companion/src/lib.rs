@@ -131,8 +131,8 @@ pub mod value_cases; // F6: 价值内化 (案例库 + 裁决记录 + 主人反�
 pub mod voice_session; // 连续感知①: 麦克风实时语音会话桥 (STT→对话→TTS 编排, SpeechIO trait 口) // 机制件运行时聚合 (E4 好奇 + F1 情绪 + F4 假设 + TP21 目录, CompanionApp 接线层)
                        // R177: organ invariants
 mod organ_kani_proofs;
-pub mod vm_sandbox; // 2026-08-19 Stage 2 microVM 隔离 (借鉴 Firecracker minimal API + libkrun backend 抽象; 0 装 PASS trait 口, 接 libkrun/Hyperlight/Firecracker 后启用)
-pub mod sandbox_ffi_libkrun; // 2026-08-20 #5 smol-vm Phase 1: libkrun 真接 backend (per reports/smol-vm-implementation-spec-2026-08-20.md; 0 装 PASS probe-only stub, 借思路不接 0 star orphan)
+pub mod sandbox_ffi_libkrun;
+pub mod vm_sandbox; // 2026-08-19 Stage 2 microVM 隔离 (借鉴 Firecracker minimal API + libkrun backend 抽象; 0 装 PASS trait 口, 接 libkrun/Hyperlight/Firecracker 后启用) // 2026-08-20 #5 smol-vm Phase 1: libkrun 真接 backend (per reports/smol-vm-implementation-spec-2026-08-20.md; 0 装 PASS probe-only stub, 借思路不接 0 star orphan)
 
 use std::sync::Arc;
 use thiserror::Error;

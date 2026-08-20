@@ -435,9 +435,15 @@ mod tests {
     fn llm_request_builder_clamps_out_of_range_values() {
         // 边界: temperature 越界 clamp
         let r1 = LlmRequest::new("m", vec![]).with_temperature(5.0);
-        assert!((r1.temperature - 2.0).abs() < 1e-6, "temperature 上限 clamp 到 2.0");
+        assert!(
+            (r1.temperature - 2.0).abs() < 1e-6,
+            "temperature 上限 clamp 到 2.0"
+        );
         let r2 = LlmRequest::new("m", vec![]).with_temperature(-1.0);
-        assert!((r2.temperature - 0.0).abs() < 1e-6, "temperature 下限 clamp 到 0.0");
+        assert!(
+            (r2.temperature - 0.0).abs() < 1e-6,
+            "temperature 下限 clamp 到 0.0"
+        );
         // 边界: max_tokens 越界 clamp
         let r3 = LlmRequest::new("m", vec![]).with_max_tokens(100_000);
         assert_eq!(r3.max_tokens, 32_768, "max_tokens 上限 clamp 到 32_768");
@@ -522,7 +528,9 @@ mod tests {
                 })
             }
         }
-        let p = MockProvider { resp_content: "hi from mock".to_string() };
+        let p = MockProvider {
+            resp_content: "hi from mock".to_string(),
+        };
         // 1) dyn dispatch
         let dyn_p: &dyn LlmProvider = &p;
         assert_eq!(dyn_p.name(), "mock");

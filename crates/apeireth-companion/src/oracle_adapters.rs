@@ -911,11 +911,7 @@ fn constant_diff_fallback(diff: &[f64]) -> Option<f64> {
 
 /// ARIMA 长期预测 (常数差分情形): y'_{T+h} = diff_mean + 0^h * (y'_T - diff_mean) = diff_mean
 /// 还原到原尺度: y_t = y_{t-1} + diff_mean (线性外推, 斜率 = diff_mean)
-fn constant_diff_predict(
-    series: &[f64],
-    diff_mean: f64,
-    horizon: usize,
-) -> Vec<f64> {
+fn constant_diff_predict(series: &[f64], diff_mean: f64, horizon: usize) -> Vec<f64> {
     let mut last = *series.last().unwrap_or(&0.5);
     let mut out = Vec::with_capacity(horizon);
     for _ in 0..horizon {
@@ -968,7 +964,7 @@ pub struct NaiveBaselinePredictor {
 impl Default for NaiveBaselinePredictor {
     fn default() -> Self {
         Self {
-            window: None,         // 全历史
+            window: None,              // 全历史
             max_step_ratio: Some(0.5), // 单步变化不超过 50%
         }
     }
@@ -1356,15 +1352,30 @@ mod tp25_tests {
         // step 2: 5.0 + 4.0 = 9.0
         // step 3: 5.0 + 6.0 = 11.0
         // max_step_ratio=0.5, 但变化比例 = 2/mean=0.4 < 0.5, 不截断
-        assert!((out[0] - 7.0).abs() < 1e-6, "step1 期望 7.0, 实测 {}", out[0]);
-        assert!((out[1] - 9.0).abs() < 1e-6, "step2 期望 9.0, 实测 {}", out[1]);
-        assert!((out[2] - 11.0).abs() < 1e-6, "step3 期望 11.0, 实测 {}", out[2]);
+        assert!(
+            (out[0] - 7.0).abs() < 1e-6,
+            "step1 期望 7.0, 实测 {}",
+            out[0]
+        );
+        assert!(
+            (out[1] - 9.0).abs() < 1e-6,
+            "step2 期望 9.0, 实测 {}",
+            out[1]
+        );
+        assert!(
+            (out[2] - 11.0).abs() < 1e-6,
+            "step3 期望 11.0, 实测 {}",
+            out[2]
+        );
     }
 
     #[test]
     fn naive_step_clamp_prevents_explosion() {
         // 系列值 1.0, trend 应很大 → max_step_ratio=0.5 截断
-        let p = NaiveBaselinePredictor { max_step_ratio: Some(0.5), ..Default::default() };
+        let p = NaiveBaselinePredictor {
+            max_step_ratio: Some(0.5),
+            ..Default::default()
+        };
         let series = vec![1.0, 1000.0]; // 极端 trend
         let out = p.predict(&series, 3).unwrap();
         // 每步变化 ≤ |prev| * ratio; prev 是上一步预测值, 不是 series 末尾
@@ -1396,7 +1407,10 @@ mod tp25_tests {
     fn naive_windowed_mean() {
         // window=2: 只看最后 2 个点 [4.0, 6.0]
         // baseline = 5.0, trend = (6-4)/(1-0) = 2.0
-        let p = NaiveBaselinePredictor { window: Some(2), ..Default::default() };
+        let p = NaiveBaselinePredictor {
+            window: Some(2),
+            ..Default::default()
+        };
         let series = vec![1.0, 2.0, 3.0, 4.0, 6.0];
         let out = p.predict(&series, 2).unwrap();
         // step1: 5.0 + 2.0 = 7.0, step2: 5.0 + 4.0 = 9.0
@@ -1472,9 +1486,21 @@ mod tp25_tests {
         let series: Vec<f64> = (0..10).map(|t| 1.0 + 2.0 * t as f64).collect();
         let out = p.predict(&series, 3).unwrap();
         // 期望: t=10 → 21, t=11 → 23, t=12 → 25 (线性外推 ±少量噪声)
-        assert!((out[0] - 21.0).abs() < 1.5, "step1 期望 ≈21, 实测 {}", out[0]);
-        assert!((out[1] - 23.0).abs() < 1.5, "step2 期望 ≈23, 实测 {}", out[1]);
-        assert!((out[2] - 25.0).abs() < 1.5, "step3 期望 ≈25, 实测 {}", out[2]);
+        assert!(
+            (out[0] - 21.0).abs() < 1.5,
+            "step1 期望 ≈21, 实测 {}",
+            out[0]
+        );
+        assert!(
+            (out[1] - 23.0).abs() < 1.5,
+            "step2 期望 ≈23, 实测 {}",
+            out[1]
+        );
+        assert!(
+            (out[2] - 25.0).abs() < 1.5,
+            "step3 期望 ≈25, 实测 {}",
+            out[2]
+        );
     }
 
     #[test]
@@ -1482,7 +1508,9 @@ mod tp25_tests {
         // 自相关序列: 围绕均值震荡, AR(1) φ > 0 → 预测回归到均值
         let p = ArimaPredictor::default();
         // 围绕 100 震荡: [110, 95, 105, 92, 108, 94, 106, 91, 109, 93]
-        let series = vec![110.0, 95.0, 105.0, 92.0, 108.0, 94.0, 106.0, 91.0, 109.0, 93.0];
+        let series = vec![
+            110.0, 95.0, 105.0, 92.0, 108.0, 94.0, 106.0, 91.0, 109.0, 93.0,
+        ];
         let out = p.predict(&series, 5).unwrap();
         // 长期预测应回归到均值附近 (差分序列 mean ≈ 0)
         // 原尺度预测应接近 last value (~93) 的衰减
@@ -1514,7 +1542,9 @@ mod tp25_tests {
     #[test]
     fn arima_predict_with_ci_returns_2_arrays() {
         use super::arima_predict_with_ci;
-        let series: Vec<f64> = (0..20).map(|t| 100.0 + t as f64 + (t as f64 * 0.5).sin()).collect();
+        let series: Vec<f64> = (0..20)
+            .map(|t| 100.0 + t as f64 + (t as f64 * 0.5).sin())
+            .collect();
         let (pred, ci) = arima_predict_with_ci(&series, 4).unwrap();
         assert_eq!(pred.len(), 4);
         assert_eq!(ci.len(), 4);
@@ -1585,7 +1615,12 @@ mod tp25_tests {
         assert_eq!(arima.provider(), "arima-1-1-1");
         assert_eq!(naive.provider(), "naive-baseline");
         assert_eq!(noop.provider(), "noop");
-        let names = [lgbm.provider(), arima.provider(), naive.provider(), noop.provider()];
+        let names = [
+            lgbm.provider(),
+            arima.provider(),
+            naive.provider(),
+            noop.provider(),
+        ];
         for i in 0..names.len() {
             for j in (i + 1)..names.len() {
                 assert_ne!(names[i], names[j], "provider 冲突: {names:?}");
@@ -1602,7 +1637,10 @@ mod tp25_tests {
             (blended - 0.6692307).abs() < 1e-6,
             "blended={blended} (期望 ≈0.6692)"
         );
-        assert!((0.0..=1.0).contains(&blended), "blend 应 ∈ [0,1], 实测 {blended}");
+        assert!(
+            (0.0..=1.0).contains(&blended),
+            "blend 应 ∈ [0,1], 实测 {blended}"
+        );
     }
 
     #[test]
@@ -1647,19 +1685,29 @@ mod tp25_tests {
         use super::{lightgbm_predict_with_ci, LightGBMProvider};
         use std::path::Path;
         let fixture = Path::new("tests/fixtures/lightgbm/BTC_1step_v1_20260820.onnx");
-        if !fixture.exists() { return; }
+        if !fixture.exists() {
+            return;
+        }
         let p = LightGBMProvider::from_onnx_file(fixture, 60);
         assert_eq!(p.provider(), "lightgbm-onnx");
         let series: Vec<f64> = (0..100).map(|t| 100.0 + (t as f64 / 5.0).sin()).collect();
         let (pred, ci) = lightgbm_predict_with_ci(&series, 5).expect("N-step+CI");
         assert_eq!(pred.len(), 5);
         assert_eq!(ci.len(), 5);
-        for (i, v) in pred.iter().enumerate() { assert!(v.is_finite(), "step{i} 预测发散: {v}"); }
-        for (i, c) in ci.iter().enumerate() { assert!(*c > 0.0, "step{i} CI 半宽非正: {c}"); }
-        assert!(ci[4] >= ci[0], "CI 递增: h=5 ({}) >= h=1 ({})", ci[4], ci[0]);
+        for (i, v) in pred.iter().enumerate() {
+            assert!(v.is_finite(), "step{i} 预测发散: {v}");
+        }
+        for (i, c) in ci.iter().enumerate() {
+            assert!(*c > 0.0, "step{i} CI 半宽非正: {c}");
+        }
+        assert!(
+            ci[4] >= ci[0],
+            "CI 递增: h=5 ({}) >= h=1 ({})",
+            ci[4],
+            ci[0]
+        );
     }
 }
-
 
 // ============================================================
 // TP25 LightGBM Provider (tract-onnx 纯 Rust 推理, 0 系统库)
@@ -1683,13 +1731,20 @@ pub struct LightGBMProvider {
 
 impl Default for LightGBMProvider {
     fn default() -> Self {
-        Self { session: None, window_size: 60 }
+        Self {
+            session: None,
+            window_size: 60,
+        }
     }
 }
 
 impl LightGBMProvider {
-    pub fn is_loaded(&self) -> bool { self.session.is_some() }
-    pub fn window_size(&self) -> usize { self.window_size }
+    pub fn is_loaded(&self) -> bool {
+        self.session.is_some()
+    }
+    pub fn window_size(&self) -> usize {
+        self.window_size
+    }
 
     pub fn from_onnx_file(path: &std::path::Path, window_size: usize) -> Self {
         use tract_onnx::prelude::*;
@@ -1704,7 +1759,10 @@ impl LightGBMProvider {
         match load_result {
             Ok(model) => {
                 eprintln!("[LightGBMProvider] 装载成功: {path:?}");
-                Self { session: Some(Arc::new(model)), window_size }
+                Self {
+                    session: Some(Arc::new(model)),
+                    window_size,
+                }
             }
             Err(e) => {
                 eprintln!("[LightGBMProvider] 装载失败: {path:?} ({e})");
@@ -1714,22 +1772,28 @@ impl LightGBMProvider {
     }
 
     fn default_with_window(window_size: usize) -> Self {
-        Self { session: None, window_size }
+        Self {
+            session: None,
+            window_size,
+        }
     }
 
     fn run_one_step(&self, history: &[f64]) -> Result<f64, String> {
         use tract_onnx::prelude::*;
-        let session = self.session.as_ref().ok_or_else(|| "session 未装载".to_string())?;
+        let session = self
+            .session
+            .as_ref()
+            .ok_or_else(|| "session 未装载".to_string())?;
         let row: Vec<f32> = history.iter().map(|&v| v as f32).collect();
         let input = ndarray::Array2::<f32>::from_shape_vec((1, self.window_size), row)
             .map_err(|e| format!("ndarray 构造失败: {e}"))?;
-        let tensor: Tensor = Tensor::from_shape(
-            &[1, self.window_size],
-            &input.as_slice().unwrap(),
-        ).map_err(|e| format!("构造 Tensor 失败: {e}"))?;
-        let result = session.run(tvec![tensor.into()])
+        let tensor: Tensor = Tensor::from_shape(&[1, self.window_size], &input.as_slice().unwrap())
+            .map_err(|e| format!("构造 Tensor 失败: {e}"))?;
+        let result = session
+            .run(tvec![tensor.into()])
             .map_err(|e| format!("tract run 失败: {e}"))?;
-        let out = result[0].to_array_view::<f32>()
+        let out = result[0]
+            .to_array_view::<f32>()
             .map_err(|e| format!("输出类型不匹配 f32: {e}"))?;
         Ok(out[[0, 0]] as f64)
     }
@@ -1740,33 +1804,45 @@ impl TimeSeriesPredictor for LightGBMProvider {
         let session = self.session.as_ref().ok_or_else(|| {
             AdapterError::Degraded("LightGBM 模型未装载 (默认 Noop, .onnx 缺失或装载失败)".into())
         })?;
-        if horizon == 0 { return Ok(Vec::new()); }
+        if horizon == 0 {
+            return Ok(Vec::new());
+        }
         if series.len() < self.window_size {
             return Err(AdapterError::Degraded(format!(
-                "LightGBM 输入序列太短 ({} < window={})", series.len(), self.window_size
+                "LightGBM 输入序列太短 ({} < window={})",
+                series.len(),
+                self.window_size
             )));
         }
         let mut history = series[series.len() - self.window_size..].to_vec();
         let mut out = Vec::with_capacity(horizon);
         for _ in 0..horizon {
-            let y = self.run_one_step(&history)
+            let y = self
+                .run_one_step(&history)
                 .map_err(|e| AdapterError::Degraded(format!("LightGBM 推理失败: {e}")))?;
             out.push(y);
             history.push(y);
-            if history.len() > self.window_size { history.remove(0); }
+            if history.len() > self.window_size {
+                history.remove(0);
+            }
         }
         let _ = session;
         Ok(out)
     }
 
     fn provider(&self) -> &str {
-        if self.session.is_some() { "lightgbm-onnx" } else { "lightgbm-noop" }
+        if self.session.is_some() {
+            "lightgbm-onnx"
+        } else {
+            "lightgbm-noop"
+        }
     }
 }
 
-pub fn lightgbm_predict_with_ci(series: &[f64], horizon: usize)
-    -> Result<(Vec<f64>, Vec<f64>), AdapterError>
-{
+pub fn lightgbm_predict_with_ci(
+    series: &[f64],
+    horizon: usize,
+) -> Result<(Vec<f64>, Vec<f64>), AdapterError> {
     let provider = LightGBMProvider::default();
     let pred = provider.predict(series, horizon)?;
     if !provider.is_loaded() {
@@ -1775,14 +1851,21 @@ pub fn lightgbm_predict_with_ci(series: &[f64], horizon: usize)
     let last = series.last().copied().unwrap_or(0.0);
     let prev = series.iter().rev().nth(1).copied().unwrap_or(last);
     let trend = last - prev;
-    let residuals: Vec<f64> = pred.iter().enumerate()
-        .map(|(i, &p)| p - (last + trend * (i + 1) as f64)).collect();
+    let residuals: Vec<f64> = pred
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| p - (last + trend * (i + 1) as f64))
+        .collect();
     let sigma = if residuals.len() >= 2 {
         let mean = residuals.iter().sum::<f64>() / residuals.len() as f64;
         let var = residuals.iter().map(|e| (e - mean).powi(2)).sum::<f64>()
             / (residuals.len() - 1) as f64;
         var.sqrt()
-    } else { 0.0 };
-    let ci: Vec<f64> = (1..=horizon).map(|h| 1.96 * sigma * (h as f64).sqrt()).collect();
+    } else {
+        0.0
+    };
+    let ci: Vec<f64> = (1..=horizon)
+        .map(|h| 1.96 * sigma * (h as f64).sqrt())
+        .collect();
     Ok((pred, ci))
 }

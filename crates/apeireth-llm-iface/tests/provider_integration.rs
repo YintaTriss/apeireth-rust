@@ -93,9 +93,15 @@ fn chat_message_factories_match_role() {
 #[test]
 fn chat_role_serializes_to_lowercase() {
     // 验证 serde rename_all = "lowercase"
-    assert_eq!(serde_json::to_string(&ChatRole::System).unwrap(), "\"system\"");
+    assert_eq!(
+        serde_json::to_string(&ChatRole::System).unwrap(),
+        "\"system\""
+    );
     assert_eq!(serde_json::to_string(&ChatRole::User).unwrap(), "\"user\"");
-    assert_eq!(serde_json::to_string(&ChatRole::Assistant).unwrap(), "\"assistant\"");
+    assert_eq!(
+        serde_json::to_string(&ChatRole::Assistant).unwrap(),
+        "\"assistant\""
+    );
 }
 
 #[test]
@@ -216,7 +222,11 @@ impl LlmProvider for EchoProvider {
         true
     }
     async fn complete(&self, req: LlmRequest) -> Result<LlmResponse, LlmError> {
-        let last_msg = req.messages.last().map(|m| m.content.as_str()).unwrap_or("");
+        let last_msg = req
+            .messages
+            .last()
+            .map(|m| m.content.as_str())
+            .unwrap_or("");
         Ok(LlmResponse {
             content: format!("echo: {last_msg}"),
             usage: TokenUsage::new(1, 2),
@@ -263,10 +273,8 @@ async fn default_complete_stream_custom_override_uses_custom_logic() {
         async fn complete_stream(
             &self,
             req: LlmRequest,
-        ) -> Result<
-            futures::stream::BoxStream<'static, Result<String, LlmError>>,
-            LlmError,
-        > {
+        ) -> Result<futures::stream::BoxStream<'static, Result<String, LlmError>>, LlmError>
+        {
             // 真流式: 拆 content 成 chunk (每字 1 个)
             let chunks: Vec<String> = req
                 .messages
@@ -296,33 +304,51 @@ fn llm_error_8_variants_display_uniquely() {
     // 用 Display 区分 8 variant (thiserror derive 自动 impl Display)
     let errs: Vec<(&'static str, LlmError)> = vec![
         ("auth failed", LlmError::AuthFailed("bad key".into())),
-        ("rate limited", LlmError::RateLimited {
-            retry_after_ms: 1000,
-            provider: "p".into(),
-        }),
-        ("timeout", LlmError::Timeout {
-            timeout_ms: 5000,
-            provider: "p".into(),
-        }),
-        ("bad response", LlmError::BadResponse {
-            provider: "p".into(),
-            detail: "x".into(),
-            status_code: Some(500),
-        }),
-        ("network", LlmError::Network {
-            provider: "p".into(),
-            detail: "x".into(),
-        }),
-        ("no provider", LlmError::NoProvider {
-            model: "m".into(),
-            available: vec![],
-        }),
+        (
+            "rate limited",
+            LlmError::RateLimited {
+                retry_after_ms: 1000,
+                provider: "p".into(),
+            },
+        ),
+        (
+            "timeout",
+            LlmError::Timeout {
+                timeout_ms: 5000,
+                provider: "p".into(),
+            },
+        ),
+        (
+            "bad response",
+            LlmError::BadResponse {
+                provider: "p".into(),
+                detail: "x".into(),
+                status_code: Some(500),
+            },
+        ),
+        (
+            "network",
+            LlmError::Network {
+                provider: "p".into(),
+                detail: "x".into(),
+            },
+        ),
+        (
+            "no provider",
+            LlmError::NoProvider {
+                model: "m".into(),
+                available: vec![],
+            },
+        ),
         ("config", LlmError::Config("x".into())),
-        ("provider exhausted", LlmError::ProviderExhausted {
-            provider: "p".into(),
-            attempts: 3,
-            last_error: None,
-        }),
+        (
+            "provider exhausted",
+            LlmError::ProviderExhausted {
+                provider: "p".into(),
+                attempts: 3,
+                last_error: None,
+            },
+        ),
     ];
     let displays: Vec<String> = errs.iter().map(|(_, e)| e.to_string()).collect();
     let unique: std::collections::HashSet<&String> = displays.iter().collect();

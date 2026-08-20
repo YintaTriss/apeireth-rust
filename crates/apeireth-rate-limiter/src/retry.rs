@@ -79,7 +79,10 @@ pub struct ConstantBackoff {
 impl ConstantBackoff {
     /// 新建 — delay 每次等多久, max_attempts 0 = 不限.
     pub fn new(delay: Duration, max_attempts: u32) -> Self {
-        Self { delay, max_attempts }
+        Self {
+            delay,
+            max_attempts,
+        }
     }
 }
 
@@ -127,12 +130,7 @@ pub struct ExponentialBackoff {
 impl ExponentialBackoff {
     /// 新建指数 backoff — base / cap / max_attempts (0=不限) / max_total_wait (0=不限).
     /// 0 装严守: 0 假设 caller 一定想要 full-jitter, 显式参数配.
-    pub fn new(
-        base: Duration,
-        cap: Duration,
-        max_attempts: u32,
-        max_total_wait: Duration,
-    ) -> Self {
+    pub fn new(base: Duration, cap: Duration, max_attempts: u32, max_total_wait: Duration) -> Self {
         Self {
             base,
             cap,
@@ -246,12 +244,18 @@ pub fn decide(
     // 1. max_attempts
     let max = backoff.max_attempts();
     if max > 0 && attempt >= max {
-        return RetryOutcome::Stop(StopReason::MaxAttemptsExceeded { attempts: attempt + 1, max });
+        return RetryOutcome::Stop(StopReason::MaxAttemptsExceeded {
+            attempts: attempt + 1,
+            max,
+        });
     }
     // 2. max_total_wait
     let total = backoff.max_total_wait();
     if total > Duration::ZERO && elapsed >= total {
-        return RetryOutcome::Stop(StopReason::MaxWaitExceeded { elapsed, max: total });
+        return RetryOutcome::Stop(StopReason::MaxWaitExceeded {
+            elapsed,
+            max: total,
+        });
     }
     // 3. retry_after 优先 (尊重 server)
     let delay = if let Some(ra) = retry_after {
@@ -262,7 +266,10 @@ pub fn decide(
     };
     // 5. 检查 delay 是否会让 elapsed 超 max_total_wait
     if total > Duration::ZERO && elapsed + delay > total {
-        return RetryOutcome::Stop(StopReason::MaxWaitExceeded { elapsed: elapsed + delay, max: total });
+        return RetryOutcome::Stop(StopReason::MaxWaitExceeded {
+            elapsed: elapsed + delay,
+            max: total,
+        });
     }
     RetryOutcome::Retry(delay)
 }
@@ -302,10 +309,10 @@ mod tests {
     #[test]
     fn exponential_backoff_jitter_within_cap() {
         let b = ExponentialBackoff::new(
-            Duration::from_millis(100),  // base
-            Duration::from_secs(30),     // cap
-            0,                            // max_attempts: 不限
-            Duration::ZERO,                // max_total_wait: 不限
+            Duration::from_millis(100), // base
+            Duration::from_secs(30),    // cap
+            0,                          // max_attempts: 不限
+            Duration::ZERO,             // max_total_wait: 不限
         );
         // attempt 0: 范围 [0, min(30s, 100ms)] = [0, 100ms]
         for _ in 0..100 {
@@ -412,7 +419,10 @@ mod tests {
         let b = ConstantBackoff::new(Duration::from_millis(100), 2);
         // attempt 2 已超 max=2 (含首次 = attempt 1 = 1st, attempt 2 = 2nd 已超)
         let outcome = decide(&b, 2, None, Duration::ZERO, 0);
-        assert!(matches!(outcome, RetryOutcome::Stop(StopReason::MaxAttemptsExceeded { .. })));
+        assert!(matches!(
+            outcome,
+            RetryOutcome::Stop(StopReason::MaxAttemptsExceeded { .. })
+        ));
     }
 
     /// decide: max_total_wait 超限 (ConstantBackoff max_total_wait=delay*max_attempts=100ms*2=200ms, elapsed=200ms 已满)
@@ -423,7 +433,10 @@ mod tests {
         let b = ConstantBackoff::new(Duration::from_millis(100), 2);
         let outcome = decide(&b, 0, None, Duration::from_millis(200), 0);
         assert!(
-            matches!(outcome, RetryOutcome::Stop(StopReason::MaxWaitExceeded { .. })),
+            matches!(
+                outcome,
+                RetryOutcome::Stop(StopReason::MaxWaitExceeded { .. })
+            ),
             "elapsed=200ms >= max_total_wait=200ms 应 Stop, 实际: {:?}",
             outcome
         );
@@ -446,12 +459,15 @@ mod tests {
         let b = ExponentialBackoff::new(
             Duration::from_millis(100),
             Duration::from_secs(10),
-            0,                           // 不限 attempts
-            Duration::from_secs(1),      // max_total_wait = 1s
+            0,                      // 不限 attempts
+            Duration::from_secs(1), // max_total_wait = 1s
         );
         let ra = RetryAfter::Seconds(2); // server 说等 2s, 会让总等超 1s
         let outcome = decide(&b, 0, Some(ra), Duration::from_millis(500), 0);
         // elapsed(500ms) + delay(2s) = 2.5s > max_total_wait(1s) → Stop
-        assert!(matches!(outcome, RetryOutcome::Stop(StopReason::MaxWaitExceeded { .. })));
+        assert!(matches!(
+            outcome,
+            RetryOutcome::Stop(StopReason::MaxWaitExceeded { .. })
+        ));
     }
 }

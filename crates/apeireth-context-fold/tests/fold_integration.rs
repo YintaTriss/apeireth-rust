@@ -18,7 +18,7 @@
 #![allow(missing_docs)]
 
 use apeireth_context_fold::{
-    FoldError, FoldMarker, FoldResult, FoldStrategy, MarkerKind, fold, unfold,
+    fold, unfold, FoldError, FoldMarker, FoldResult, FoldStrategy, MarkerKind,
 };
 
 // =============================================================================
@@ -70,7 +70,10 @@ fn fold_markerreplace_preserves_full_content_in_marker() {
     assert!(!r.folded.contains("this is the full content"));
     assert_eq!(r.markers.len(), 1);
     assert_eq!(r.markers[0].kind, MarkerKind::Full);
-    assert_eq!(r.markers[0].payload, s, "MarkerReplace lossless — payload = 原始");
+    assert_eq!(
+        r.markers[0].payload, s,
+        "MarkerReplace lossless — payload = 原始"
+    );
 }
 
 #[test]
@@ -79,7 +82,10 @@ fn fold_summary_uses_truncate_fallback_honestly() {
     let s = "summary with no llm";
     let r = fold(s, FoldStrategy::Summary, 5).unwrap();
     assert_eq!(r.folded, "summa");
-    assert!(r.markers.is_empty(), "summary fallback 跟 truncate 一样, 不加 marker");
+    assert!(
+        r.markers.is_empty(),
+        "summary fallback 跟 truncate 一样, 不加 marker"
+    );
 }
 
 #[test]
@@ -134,7 +140,10 @@ fn fold_limit_zero_error_all_strategies() {
         FoldStrategy::MarkerReplace,
         FoldStrategy::Summary,
     ] {
-        assert!(matches!(fold("x", strategy, 0), Err(FoldError::InvalidLimit)));
+        assert!(matches!(
+            fold("x", strategy, 0),
+            Err(FoldError::InvalidLimit)
+        ));
     }
 }
 
@@ -189,7 +198,10 @@ fn unfold_multiple_markers_all_replaced() {
         },
     ];
     // 用不同 payload 字符串 (避免 placeholder 重复)
-    let folded = format!("pre {} mid {} post {}", markers[0].payload, markers[1].payload, markers[2].payload);
+    let folded = format!(
+        "pre {} mid {} post {}",
+        markers[0].payload, markers[1].payload, markers[2].payload
+    );
     let out = unfold(&folded, &markers);
     // String::replace 顺序替换: marker[0] 替换它 (first 出现), 后续 marker 也替换
     // 注: 因为 payload 不同 (AAA, BBB, CCC), 替换不冲突
@@ -234,7 +246,10 @@ fn integration_fold_chooses_strategy_by_content_size() {
 
     let long = "a".repeat(500);
     let r = fold(&long, FoldStrategy::MarkerReplace, 50).unwrap();
-    assert!(!r.folded.contains('a'), "MarkerReplace 全压缩, 占位符不包含原文");
+    assert!(
+        !r.folded.contains('a'),
+        "MarkerReplace 全压缩, 占位符不包含原文"
+    );
     assert_eq!(r.markers[0].payload, long, "MarkerReplace lossless");
 }
 

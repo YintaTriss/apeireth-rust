@@ -113,7 +113,9 @@ pub use crate::config::{
 pub use crate::error::{RateLimiterError, Result};
 pub use crate::fixed_window::FixedWindow;
 pub use crate::leaky_bucket::LeakyBucket;
-pub use crate::retry::{Backoff, ConstantBackoff, ExponentialBackoff, RetryAfter, RetryOutcome, StopReason};
+pub use crate::retry::{
+    Backoff, ConstantBackoff, ExponentialBackoff, RetryAfter, RetryOutcome, StopReason,
+};
 pub use crate::sliding_window::SlidingWindow;
 pub use crate::storage::{
     build_storage, DistributedStorage, FileStorage, InMemoryStorage, MemcachedStorage,

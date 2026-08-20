@@ -18,6 +18,6 @@ pub mod register;
 // K-1 强校验 + m3 防御公开 API (per 蓝图 §2.3.1 + 测试 fixture 缺失补回).
 // 集成 test (tests/repo_scan_integration.rs) 用这些常量, 0 触碰 scan mod 私有.
 pub use scan::{
-    KEY_FILE_PATTERNS, RepoScanError, SUPPORTED_LANGUAGES, TOOL_WHITELIST, TOOL_WHITELIST_COUNT,
-    m3_defense_sanity_check, validate_external_whitelist, validate_tool_call,
+    m3_defense_sanity_check, validate_external_whitelist, validate_tool_call, RepoScanError,
+    KEY_FILE_PATTERNS, SUPPORTED_LANGUAGES, TOOL_WHITELIST, TOOL_WHITELIST_COUNT,
 };

@@ -5,10 +5,10 @@
 
 #![allow(missing_docs)]
 
-use apeireth_credentials::{
-    CredentialsError, CredentialsStore, FileCredentialsStore, validate_service_name,
-};
 use apeireth_credentials::secret::SecretString;
+use apeireth_credentials::{
+    validate_service_name, CredentialsError, CredentialsStore, FileCredentialsStore,
+};
 
 fn tmp_path(name: &str) -> std::path::PathBuf {
     // 用 pid + name 隔离, 0 真凭据, 0 假数据
@@ -163,7 +163,10 @@ fn file_store_delete_existing_returns_ok() {
 fn file_store_delete_unknown_returns_error() {
     let p = tmp_path("delete-unknown");
     let store = FileCredentialsStore::new(&p).unwrap();
-    assert!(matches!(store.delete("nonexistent"), Err(CredentialsError::UnknownService(_))));
+    assert!(matches!(
+        store.delete("nonexistent"),
+        Err(CredentialsError::UnknownService(_))
+    ));
 }
 
 #[test]
@@ -191,7 +194,9 @@ fn file_store_contains_returns_correct_state() {
     let p = tmp_path("contains");
     let store = FileCredentialsStore::new(&p).unwrap();
     assert!(!store.contains("missing").unwrap());
-    store.set("present", SecretString::new(fake_value())).unwrap();
+    store
+        .set("present", SecretString::new(fake_value()))
+        .unwrap();
     assert!(store.contains("present").unwrap());
 }
 
@@ -253,7 +258,14 @@ fn file_store_delete_invalid_name_returns_error() {
 #[test]
 fn file_store_new_creates_parent_directory() {
     let parent = tmp_path("parent-dir").parent().unwrap().to_path_buf();
-    let nested = parent.join(format!("nested-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let nested = parent.join(format!(
+        "nested-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     let creds_path = nested.join("deeper").join("creds.json");
     assert!(!nested.exists());
     let _store = FileCredentialsStore::new(&creds_path).unwrap();
@@ -286,8 +298,12 @@ fn credentials_error_displays_distinctly() {
 
 #[test]
 fn credentials_error_specific_messages() {
-    assert!(CredentialsError::UnknownService("alpha".into()).to_string().contains("alpha"));
-    assert!(CredentialsError::InvalidServiceName("bad!".into()).to_string().contains("bad!"));
+    assert!(CredentialsError::UnknownService("alpha".into())
+        .to_string()
+        .contains("alpha"));
+    assert!(CredentialsError::InvalidServiceName("bad!".into())
+        .to_string()
+        .contains("bad!"));
 }
 
 // =============================================================================

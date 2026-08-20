@@ -14,9 +14,9 @@
 #![allow(missing_docs)]
 
 use apeireth_experience::{
+    bundle_to_history_refs, kg_to_context_block, wiki_to_context_block, wiki_to_history_ref,
     AssociationEdge, AssociationNetwork, AssociationNode, KnowledgeEdge, KnowledgeGraph,
-    KnowledgeNode, NodeKind, RelationKind, WikiEntry, bundle_to_history_refs,
-    kg_to_context_block, wiki_to_context_block, wiki_to_history_ref,
+    KnowledgeNode, NodeKind, RelationKind, WikiEntry,
 };
 
 // =============================================================================
@@ -69,7 +69,10 @@ fn wiki_entry_is_high_confidence_uses_threshold() {
 #[test]
 fn wiki_entry_is_stale_uses_max_age() {
     let e = WikiEntry::new("t", "c", 0.5);
-    assert!(!e.is_stale(i64::MAX), "刚创建应非 stale (max_age 远大于 age)");
+    assert!(
+        !e.is_stale(i64::MAX),
+        "刚创建应非 stale (max_age 远大于 age)"
+    );
     assert!(e.is_stale(-1), "max_age < 0 永远 stale");
 }
 
@@ -96,8 +99,18 @@ fn knowledge_graph_add_node_returns_unique_uuid() {
 #[test]
 fn knowledge_graph_2_node_kinds_supported() {
     let mut kg = KnowledgeGraph::new();
-    kg.add_node(KnowledgeNode::new("extracted-1", NodeKind::Extracted, 0.5, "ep-1"));
-    kg.add_node(KnowledgeNode::new("inferred-1", NodeKind::Inferred, 0.4, "ep-1"));
+    kg.add_node(KnowledgeNode::new(
+        "extracted-1",
+        NodeKind::Extracted,
+        0.5,
+        "ep-1",
+    ));
+    kg.add_node(KnowledgeNode::new(
+        "inferred-1",
+        NodeKind::Inferred,
+        0.4,
+        "ep-1",
+    ));
     assert_eq!(kg.node_count(), 2);
 }
 
@@ -168,8 +181,14 @@ fn association_network_add_node_clamps_energy_to_unit() {
     let mut net = AssociationNetwork::new();
     let id1 = net.add_node(AssociationNode::new("a", 1.5));
     let id2 = net.add_node(AssociationNode::new("b", -0.5));
-    assert!((net.node(&id1).unwrap().energy - 1.0).abs() < 1e-9, "1.5 → 1.0");
-    assert!((net.node(&id2).unwrap().energy - 0.0).abs() < 1e-9, "-0.5 → 0.0");
+    assert!(
+        (net.node(&id1).unwrap().energy - 1.0).abs() < 1e-9,
+        "1.5 → 1.0"
+    );
+    assert!(
+        (net.node(&id2).unwrap().energy - 0.0).abs() < 1e-9,
+        "-0.5 → 0.0"
+    );
 }
 
 #[test]
@@ -189,8 +208,15 @@ fn association_network_associate_propagates_energy() {
     let b = net.add_node(AssociationNode::new("target", 0.0));
     net.connect(a, b, 1.0);
     let r = net.associate(a, 1);
-    let target_energy = r.iter().find(|(id, _, _)| *id == b).map(|(_, _, e)| *e).unwrap();
-    assert!(target_energy > 0.0, "联想传播应激活 target: got {target_energy}");
+    let target_energy = r
+        .iter()
+        .find(|(id, _, _)| *id == b)
+        .map(|(_, _, e)| *e)
+        .unwrap();
+    assert!(
+        target_energy > 0.0,
+        "联想传播应激活 target: got {target_energy}"
+    );
 }
 
 #[test]
@@ -270,7 +296,12 @@ fn bundle_to_history_refs_combines_multiple_sources() {
     let w1 = WikiEntry::new("a", "...", 0.9);
     let w2 = WikiEntry::new("b", "...", 0.8);
     let mut kg = KnowledgeGraph::new();
-    let _n1 = kg.add_node(KnowledgeNode::new("kg-node", NodeKind::Extracted, 0.5, "ep-1"));
+    let _n1 = kg.add_node(KnowledgeNode::new(
+        "kg-node",
+        NodeKind::Extracted,
+        0.5,
+        "ep-1",
+    ));
     let refs = bundle_to_history_refs(&[&w1, &w2], &kg, _n1, 2);
     assert!(!refs.is_empty(), "bundle 应返非空");
     let joined = refs.join("|");
@@ -307,7 +338,11 @@ fn integration_wiki_kg_association_flow() {
     assoc.connect(a, b, 1.0);
     let r = assoc.associate(a, 2);
     assert_eq!(r.len(), 2);
-    let borrow_energy = r.iter().find(|(id, _, _)| *id == b).map(|(_, _, e)| *e).unwrap();
+    let borrow_energy = r
+        .iter()
+        .find(|(id, _, _)| *id == b)
+        .map(|(_, _, e)| *e)
+        .unwrap();
     assert!(borrow_energy > 0.0, "联想传播应激活 borrow checker");
 
     // 4. council_bridge 转换都能用
@@ -335,7 +370,10 @@ fn integration_wiki_lifecycle_promote_shows_in_context() {
     assert!(wiki.is_high_confidence(0.5));
 
     let ctx3 = wiki_to_context_block(&wiki);
-    assert!(ctx3.contains("promotions: 3"), "升 3 次后 context_block 应含 promotions: 3");
+    assert!(
+        ctx3.contains("promotions: 3"),
+        "升 3 次后 context_block 应含 promotions: 3"
+    );
     assert!(ctx3.contains("initial"), "升 3 次后 content 仍 \"initial\"");
     assert_ne!(ctx0, ctx3, "promotions 字段变了, context_block 不同");
 }

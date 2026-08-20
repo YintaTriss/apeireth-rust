@@ -33,12 +33,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use apeireth_api::llm::router::MultiLlmRouter;
 use apeireth_api::protocol_handlers::{
     build_pipeline, dispatch, openai_chat_from_normalized, openai_chat_to_normalized,
     stream_forward, OpenAiChatMessage, OpenAiChatRequest,
 };
-use apeireth_api::{LlmConfig, LlmError, LlmProvider, LlmRequest, LlmResponse, Pipeline, ProtocolKind};
-use apeireth_api::llm::router::MultiLlmRouter;
+use apeireth_api::{
+    LlmConfig, LlmError, LlmProvider, LlmRequest, LlmResponse, Pipeline, ProtocolKind,
+};
 use apeireth_bus::{LifecycleBus, LifecycleContext, LifecycleEvent, LifecycleHook};
 use apeireth_companion::assemble::{CompanionApp, DeepRecall, DialogSummarizer, ExperienceRefiner};
 use apeireth_companion::daemon::{
@@ -89,8 +91,8 @@ thread_local! {
 }
 
 fn init_model() -> &'static str {
-    let new_value = std::env::var("APEIRETH_LLM_MODEL")
-        .unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+    let new_value =
+        std::env::var("APEIRETH_LLM_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
     MODEL.with(|c| *c.borrow_mut() = new_value.clone());
     Box::leak(new_value.into_boxed_str())
 }
@@ -156,7 +158,11 @@ impl PipelinePool {
         fallback_order: Vec<String>,
         router: Arc<MultiLlmRouter>,
     ) -> Self {
-        let default = pipelines.values().next().cloned().expect("multi pool 至少 1 pipeline");
+        let default = pipelines
+            .values()
+            .next()
+            .cloned()
+            .expect("multi pool 至少 1 pipeline");
         Self {
             pipelines,
             fallback_order,
@@ -174,7 +180,11 @@ impl PipelinePool {
     }
 
     pub fn provider_count(&self) -> usize {
-        if self.pipelines.is_empty() { 1 } else { self.pipelines.len() }
+        if self.pipelines.is_empty() {
+            1
+        } else {
+            self.pipelines.len()
+        }
     }
 }
 
@@ -1206,8 +1216,13 @@ async fn chat_completions(
             "[stream] req.stream=true, 透传 SSE 到 {} (tool loop 跳过, per v1.5 known limit)",
             model()
         );
-        return match stream_forward(&st.pool.select_pipeline(model()), ProtocolKind::OpenAiChat, body.into(), model())
-            .await
+        return match stream_forward(
+            &st.pool.select_pipeline(model()),
+            ProtocolKind::OpenAiChat,
+            body.into(),
+            model(),
+        )
+        .await
         {
             Ok(r) => r.into_response(),
             Err(e) => {
@@ -1399,12 +1414,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 启动时读 TOML 配置 (per 2026-08-20 P1 配置层): env APEIRETH_LLM_CONFIG 指向 TOML 文件.
     // TOML 里第一个 provider 的 base_url 自动覆盖 BASE_URL. 多 provider / fallback 链
     // 见 docs/02-guides/custom-llm.md (本 session C 任务). 不读 TOML 时退化到 env / DEFAULT.
-    let toml_cfg = std::env::var("APEIRETH_LLM_CONFIG")
-        .ok()
-        .and_then(|path| match apeireth_api::llm::config::LlmConfig::from_file(&path) {
+    let toml_cfg = std::env::var("APEIRETH_LLM_CONFIG").ok().and_then(|path| {
+        match apeireth_api::llm::config::LlmConfig::from_file(&path) {
             Ok(cfg) => {
                 let n = cfg.providers.len();
-                let first_base = cfg.providers.values().next().and_then(|p| p.base_url.clone());
+                let first_base = cfg
+                    .providers
+                    .values()
+                    .next()
+                    .and_then(|p| p.base_url.clone());
                 println!("[llm] TOML config 加载: {n} providers from {path}");
                 Some((cfg, first_base))
             }
@@ -1412,9 +1430,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("[llm] TOML config 加载失败 (退化到 env / default): {e}");
                 None
             }
-        });
+        }
+    });
     init_base_url(toml_cfg.as_ref().and_then(|(_, b)| b.clone()));
-    println!("[llm] base_url = {} (TOML 优先 → APEIRETH_LLM_BASE_URL env → default {DEFAULT_BASE_URL})", base_url());
+    println!(
+        "[llm] base_url = {} (TOML 优先 → APEIRETH_LLM_BASE_URL env → default {DEFAULT_BASE_URL})",
+        base_url()
+    );
 
     let key = load_key()?;
     let port: u16 = std::env::var("PORT")
@@ -1944,7 +1966,10 @@ mod cot_extraction_tests {
     fn multiple_think_blocks_all_extracted() {
         let content = "<think>first thought</think>middle<think>second thought</think>end";
         let (cot, visible) = extract_minimax_cot(content);
-        assert_eq!(cot, "<think>first thought</think>\n<think>second thought</think>");
+        assert_eq!(
+            cot,
+            "<think>first thought</think>\n<think>second thought</think>"
+        );
         assert_eq!(visible, "middleend");
     }
 
@@ -2134,7 +2159,11 @@ mod multi_llm_router_tests {
             let pool = PipelinePool::single("default", Arc::clone(&pipe));
 
             // 单 provider mode: provider_count == 1 (spec §2.1 PipelinePool::single)
-            assert_eq!(pool.provider_count(), 1, "single mode provider count 必须 == 1");
+            assert_eq!(
+                pool.provider_count(),
+                1,
+                "single mode provider count 必须 == 1"
+            );
 
             // 决策 4a: select_pipeline(unknown) 退化 default_pipeline
             let p1 = pool.select_pipeline("MiniMax-M3");
@@ -2143,7 +2172,10 @@ mod multi_llm_router_tests {
 
             // 决策 2 (v1 简化): select_pipeline 永远返 default_pipeline
             // 验证 3 次选都返同一个 Arc (pointer identity)
-            assert!(Arc::ptr_eq(&p1, &pipe), "select_pipeline 必须返 default Arc");
+            assert!(
+                Arc::ptr_eq(&p1, &pipe),
+                "select_pipeline 必须返 default Arc"
+            );
             assert!(Arc::ptr_eq(&p2, &pipe), "未知 model 也必须走 default");
             assert!(Arc::ptr_eq(&p3, &pipe), "任意 model 都走 default (v1 简化)");
 
@@ -2199,10 +2231,18 @@ mod multi_llm_router_tests {
                 "openai".to_string(),
                 make_arc_pipeline("https://api.openai.com/v1", "fake-openai"),
             );
-            let pool = PipelinePool::multi(pipelines, vec!["apeireth-api".into(), "openai".into()], router);
+            let pool = PipelinePool::multi(
+                pipelines,
+                vec!["apeireth-api".into(), "openai".into()],
+                router,
+            );
 
             // 多 provider mode: provider_count == 2
-            assert_eq!(pool.provider_count(), 2, "multi mode provider count 必须 == 2");
+            assert_eq!(
+                pool.provider_count(),
+                2,
+                "multi mode provider count 必须 == 2"
+            );
             assert_eq!(
                 pool.provider_names(),
                 vec!["apeireth-api".to_string(), "openai".to_string()],
@@ -2223,11 +2263,8 @@ mod multi_llm_router_tests {
             pipelines.insert("second".to_string(), Arc::clone(&second_pipe));
 
             let router = Arc::new(MultiLlmRouter::new());
-            let pool = PipelinePool::multi(
-                pipelines,
-                vec!["default".into(), "second".into()],
-                router,
-            );
+            let pool =
+                PipelinePool::multi(pipelines, vec!["default".into(), "second".into()], router);
 
             // 决策 2 (v1 简化): 任何 model 都走 default_pipeline
             // PipelinePool::multi 内部 `pipelines.values().next().cloned()` 作为 default —
@@ -2245,8 +2282,8 @@ mod multi_llm_router_tests {
 
             // 不变量 2: 这个 default 必须是 pipelines 里某个真实 pipeline 的 Arc clone
             // (PipelinePool::multi 不创造新 Arc, 是 .cloned() 复制)
-            let pool_default_is_real = Arc::ptr_eq(&p_a, &default_pipe)
-                || Arc::ptr_eq(&p_a, &second_pipe);
+            let pool_default_is_real =
+                Arc::ptr_eq(&p_a, &default_pipe) || Arc::ptr_eq(&p_a, &second_pipe);
             assert!(
                 pool_default_is_real,
                 "v1 default 必须是 pipelines 里某个真实 pipeline 的 Arc clone"
@@ -2286,8 +2323,9 @@ mod multi_llm_router_tests {
             }
         }
 
-        let failing = Arc::new(FailingProvider { name: "failing".into() })
-            as Arc<dyn LlmProvider>;
+        let failing = Arc::new(FailingProvider {
+            name: "failing".into(),
+        }) as Arc<dyn LlmProvider>;
         let success = Arc::new(
             ScriptedLlmProvider::new("success")
                 .with_script("hello", ScriptedResponse::new("from success")),
@@ -2300,10 +2338,16 @@ mod multi_llm_router_tests {
             .with_fallback(vec!["failing".into(), "success".into()]);
 
         let req = LlmRequest::new("m", vec![ChatMessage::user("hello")]);
-        let resp = router.complete(req).await.expect("router 必须 fallback 到 success");
+        let resp = router
+            .complete(req)
+            .await
+            .expect("router 必须 fallback 到 success");
 
         // 验证: 第一个 failing 失败 → router fallback → 第二个 success 命中
-        assert_eq!(resp.content, "from success", "router 必须跨失败 fallback 到 success");
+        assert_eq!(
+            resp.content, "from success",
+            "router 必须跨失败 fallback 到 success"
+        );
         assert_eq!(resp.provider, "success", "provider 字段必须是 success");
 
         // 验证 router 是 Arc<MultiLlmRouter> 形态, 能塞进 PipelinePool.multi
@@ -2426,7 +2470,8 @@ mod multi_llm_router_tests {
                     );
                     let msg = format!("{e}");
                     assert!(
-                        msg.contains("anthropic-compatible") || msg.contains("unknown provider type"),
+                        msg.contains("anthropic-compatible")
+                            || msg.contains("unknown provider type"),
                         "Err 信息必须指明 anthropic 未知 type; 实际: {msg}"
                     );
                 }
