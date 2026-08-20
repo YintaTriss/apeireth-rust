@@ -246,7 +246,9 @@ fn real_start(
     if let Some(initrd) = &config.initrd {
         let cstr = CString::new(initrd.to_string_lossy().into_owned())
             .map_err(|e| format!("initrd 路径含 null 字节: {e}"))?;
-        let rc = unsafe { libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<*const i8>()) };
+        let rc = unsafe {
+            libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<*const i8>())
+        };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx) };
             return Err(format!("krun_add_disk2 initrd 失败 (rc={rc})"));
