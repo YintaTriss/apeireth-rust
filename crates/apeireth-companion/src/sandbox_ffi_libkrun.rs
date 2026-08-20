@@ -205,21 +205,23 @@ fn real_start(
     config: &crate::vm_sandbox::VMSandboxConfig,
 ) -> Result<crate::vm_sandbox::VMSandboxHandle, String> {
     // 1. 创建 ctx (unsafe FFI)
-    let ctx: *mut c_void = unsafe { libkrun_sys::krun_create_ctx() };
-    if ctx.is_null() {
-        return Err("krun_create_ctx 返 null (libkrun.so 未装或 KVM 不可用)".into());
+    // 0.9.7 krun_create_ctx 返 i32 (实际是 ctx_id: u32, libkrun 内部 ID space).
+    // krun_free_ctx / krun_set_vm_config / krun_set_kernel / krun_add_disk2 期望 u32 ctx_id.
+    let ctx_id: u32 = unsafe { libkrun_sys::krun_create_ctx() as u32 };
+    if ctx_id == 0 {
+        return Err("krun_create_ctx 返 0 (libkrun.so 未装或 KVM 不可用)".into());
     }
 
     // 2. 配置 vCPU + RAM
     let nvcpus = config.vcpus.min(32).max(1) as u8;
     let ram_mib = config.memory_mb.max(1) as u64;
-    // 0.9.7 krun_set_vm_config 5 args: ctx, nvcpus, ram_mib, flags, ret_mode
+    // 0.9.7 krun_set_vm_config 5 args: ctx_id, nvcpus, ram_mib, flags, ret_mode
     //   0 装期: 0u32 -> flags, 0u8 -> ret_mode (默认)
     // ram_mib u64 -> u32 (try_into unwrap, 0 装期不超 32-bit)
     let ram_mib_u32: u32 = ram_mib.try_into().unwrap();
-    let rc = unsafe { libkrun_sys::krun_set_vm_config(ctx, nvcpus, ram_mib_u32, 0u32, 0u8) };
+    let rc = unsafe { libkrun_sys::krun_set_vm_config(ctx_id, nvcpus, ram_mib_u32, 0u32, 0u8) };
     if rc != 0 {
-        unsafe { libkrun_sys::krun_free_ctx(ctx) };
+        unsafe { libkrun_sys::krun_free_ctx(ctx_id) };
         return Err(format!("krun_set_vm_config 失败 (rc={rc})"));
     }
 
@@ -227,14 +229,14 @@ fn real_start(
     if let Some(rootfs) = &config.rootfs {
         let cstr = CString::new(rootfs.to_string_lossy().into_owned())
             .map_err(|e| format!("rootfs 路径含 null 字节: {e}"))?;
-        // 0.9.7 krun_add_disk2 5 args: ctx, path, format, flags, sync
+        // 0.9.7 krun_add_disk2 5 args: ctx_id, path, format, flags, sync
         //   0 装期: 0 -> format (无 format hint), 0u32 -> flags (默认), false -> sync (不阻塞)
         // std::ptr::null::<i8>() 返 *const i8 (匹配 FFI 形参)
         let rc = unsafe {
-            libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false)
+            libkrun_sys::krun_add_disk2(ctx_id, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false)
         };
         if rc != 0 {
-            unsafe { libkrun_sys::krun_free_ctx(ctx) };
+            unsafe { libkrun_sys::krun_free_ctx(ctx_id) };
             return Err(format!("krun_add_disk2 rootfs 失败 (rc={rc})"));
         }
     }
@@ -243,13 +245,13 @@ fn real_start(
     if let Some(kernel) = &config.kernel {
         let cstr = CString::new(kernel.to_string_lossy().into_owned())
             .map_err(|e| format!("kernel 路径含 null 字节: {e}"))?;
-        // 0.9.7 krun_set_kernel 5 args: ctx, kernel, initrd, cmdline, flags
-        //   0 装期: 0u32 -> initrd (无), std::ptr::null::<i8>() -> cmdline (无), 0u32 -> flags
+        // 0.9.7 krun_set_kernel 5 args: ctx_id, kernel_path, kernel_format, initramfs, cmdline
+        //   0 装期: kernel_path=cstr, kernel_format=0u32 (raw), initramfs=null (无), cmdline=null (无)
         let rc = unsafe {
-            libkrun_sys::krun_set_kernel(ctx, cstr.as_ptr(), 0u32, std::ptr::null::<i8>(), 0u32)
+            libkrun_sys::krun_set_kernel(ctx_id, cstr.as_ptr(), 0u32, std::ptr::null::<i8>(), std::ptr::null::<i8>())
         };
         if rc != 0 {
-            unsafe { libkrun_sys::krun_free_ctx(ctx) };
+            unsafe { libkrun_sys::krun_free_ctx(ctx_id) };
             return Err(format!("krun_set_kernel 失败 (rc={rc})"));
         }
     }
@@ -258,12 +260,12 @@ fn real_start(
     if let Some(initrd) = &config.initrd {
         let cstr = CString::new(initrd.to_string_lossy().into_owned())
             .map_err(|e| format!("initrd 路径含 null 字节: {e}"))?;
-        // 0.9.7 krun_add_disk2 5 args: ctx, path, format, flags, sync
+        // 0.9.7 krun_add_disk2 5 args: ctx_id, path, format, flags, sync
         let rc = unsafe {
-            libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false)
+            libkrun_sys::krun_add_disk2(ctx_id, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false)
         };
         if rc != 0 {
-            unsafe { libkrun_sys::krun_free_ctx(ctx) };
+            unsafe { libkrun_sys::krun_free_ctx(ctx_id) };
             return Err(format!("krun_add_disk2 initrd 失败 (rc={rc})"));
         }
     }
@@ -272,7 +274,7 @@ fn real_start(
     //    重要: krun_start_enter **同步阻塞**, 在生产环境需要 spawn 到 thread.
     //    当前我们**不**调 krun_start_enter (0 装 PASS 严守: 不假装已启),
     //    立即 free + 返 Err. 主人后续可加 thread::spawn 调 krun_start_enter.
-    unsafe { libkrun_sys::krun_free_ctx(ctx) };
+    unsafe { libkrun_sys::krun_free_ctx(ctx_id) };
     Err(format!(
         "LibkrunVMSandbox: Phase 2 真接 FFI 框架就位 (krun_create_ctx / krun_set_vm_config / \
          krun_add_disk2 / krun_set_kernel 全 0 错 0 警告跑通), 但 krun_start_enter 同步阻塞 \
