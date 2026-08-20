@@ -219,10 +219,7 @@ fn negative_e2e_12_keys_complete_no_missing() {
     assert_eq!(phl04, 1, "PHL-04 must have 1 key");
     assert_eq!(phl05, 1, "PHL-05 must have 1 key");
     assert_eq!(phl06, 1, "PHL-06 must have 1 key");
-    assert_eq!(
-        phl07, 1,
-        "PHL-07 (R125-12 PHL-07 本体论 trust) must have 1 key"
-    );
+    assert_eq!(phl07, 1, "PHL-07 (R125-12 PHL-07 本体论 trust) must have 1 key");
 }
 
 /// 负向集成 2: action.target = ModifyL0HA 必须被 V1+V2+V3 AND 门和 5 重守门双拒

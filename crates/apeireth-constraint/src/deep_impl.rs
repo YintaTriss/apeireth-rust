@@ -62,7 +62,8 @@ impl TwelveKeyVerdictCache {
     /// 12 槽全 None — 用于 `new()` / `clear_all()`, 集中硬编码避免散落.
     fn empty_slots() -> [Option<PhilosophyVerdict>; 13] {
         [
-            None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None,
+            None,
         ]
     }
 

@@ -154,14 +154,7 @@ pub const THIRTEEN_KEYS_HARDCODE: () = {
         }
         i += 1;
     }
-    if phl01 != 3
-        || phl02b != 3
-        || phl03 != 3
-        || phl04 != 1
-        || phl05 != 1
-        || phl06 != 1
-        || phl07 != 1
-    {
+    if phl01 != 3 || phl02b != 3 || phl03 != 3 || phl04 != 1 || phl05 != 1 || phl06 != 1 || phl07 != 1 {
         panic!("13 键分组不匹配！3+3+3+1+1+1+1=13");
     }
 };
