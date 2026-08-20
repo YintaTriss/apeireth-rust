@@ -223,8 +223,8 @@ fn real_start(
     if let Some(rootfs) = &config.rootfs {
         let cstr = CString::new(rootfs.to_string_lossy().into_owned())
             .map_err(|e| format!("rootfs 路径含 null 字节: {e}"))?;
-        // 0.9.7 推荐 krun_add_disk2 (KRUN_DISK_FORMAT_RAW = 0)
-        let rc = unsafe { libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), 0) };
+        // 0.9.7 推荐 krun_add_disk2 (KRUN_DISK_FORMAT_RAW = 0, 第 3 参 format 是 *const c_char, 传 null 表示无 format hint)
+        let rc = unsafe { libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null()) };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx) };
             return Err(format!("krun_add_disk2 rootfs 失败 (rc={rc})"));
@@ -246,7 +246,7 @@ fn real_start(
     if let Some(initrd) = &config.initrd {
         let cstr = CString::new(initrd.to_string_lossy().into_owned())
             .map_err(|e| format!("initrd 路径含 null 字节: {e}"))?;
-        let rc = unsafe { libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), 0) };
+        let rc = unsafe { libkrun_sys::krun_add_disk2(ctx, cstr.as_ptr(), std::ptr::null::<*const i8>()) };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx) };
             return Err(format!("krun_add_disk2 initrd 失败 (rc={rc})"));
