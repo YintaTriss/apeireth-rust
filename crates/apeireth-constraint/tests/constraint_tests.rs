@@ -1,4 +1,4 @@
-//! 集成测试 — 跨 crate 复用 apeireth-core 12 键 + 5 重守门端到端验证
+//! 集成测试 — 跨 crate 复用 apeireth-core 13 键 + 5 重守门端到端验证
 
 // v15 命名修正: constraint_tests.rs 验证 v14 旧 API 兼容性, 保留 verify_all_five_gates 调用
 #![allow(deprecated)]
@@ -22,20 +22,20 @@ fn demo_action(id: &str) -> Action {
     }
 }
 
-/// 集成测试 1: 端到端 — 12 键 + 5 重守门 + VerdictCache 协同
+/// 集成测试 1: 端到端 — 13 键 + 5 重守门 + VerdictCache 协同
 #[test]
 fn test_e2e_12keys_with_five_gates() {
-    // Step 1: 编译时断言 12 键长度
+    // Step 1: 编译时断言 13 键长度
     let twelve = verify_at_compile_time();
-    assert_eq!(twelve, 12);
-    let _ = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(12);
+    assert_eq!(twelve, 13);
+    let _ = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(13);
 
-    // Step 2: 创建引擎 + 列出 12 键
+    // Step 2: 创建引擎 + 列出 13 键
     let engine = ConstraintEngine::new();
     let keys = <ConstraintEngine as PhilosophyKeyAccess>::all_twelve_keys();
-    assert_eq!(keys.len(), 12);
+    assert_eq!(keys.len(), 13);
 
-    // Step 3: 12 键清单同时含 V3 LOCKED 9 键 + v4.1 新增 3 键
+    // Step 3: 13 键清单同时含 V3 LOCKED 9 键 + v4.1 新增 3 键
     let locked_v3 = [
         PhilosophyKey::NotClone,
         PhilosophyKey::NotPerfect,
@@ -53,7 +53,7 @@ fn test_e2e_12keys_with_five_gates() {
         PhilosophyKey::NotSelfRelationless,
     ];
     for k in locked_v3.iter().chain(new_v41.iter()) {
-        assert!(keys.contains(k), "12 键清单必须包含 {:?}", k);
+        assert!(keys.contains(k), "13 键清单必须包含 {:?}", k);
     }
 
     // Step 4: 4 重守门 — 未缓存 action 默认全部拒绝 (v15 FourGates)
@@ -143,8 +143,8 @@ fn test_multiple_actions_independent_verdicts() {
 #[test]
 fn test_compile_time_assertion_is_callable() {
     // 编译期 + 运行期双重断言 12
-    let n = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(12);
-    assert_eq!(n, 12);
+    let n = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(13);
+    assert_eq!(n, 13);
 }
 
 /// 集成测试 5: 拒绝原因包含 action_id (人类可读)
@@ -164,14 +164,14 @@ fn test_block_reason_contains_action_id() {
 
 // ============================================
 // V13 负向/绕过集成测试 — 安全审查 P13
-// 跨 crate 端到端验证 12 键 + 5 重守门的"不可绕过性"
+// 跨 crate 端到端验证 13 键 + 5 重守门的"不可绕过性"
 // ============================================
 
-/// 负向集成 1: 12 键清单 = V3 9 + v4.1 3, 任何缺一不可 (绕过尝试)
+/// 负向集成 1: 13 键清单 = V3 9 + v4.1 3, 任何缺一不可 (绕过尝试)
 #[test]
 fn negative_e2e_12_keys_complete_no_missing() {
     let keys = <ConstraintEngine as PhilosophyKeyAccess>::all_twelve_keys();
-    // 12 个键必须全部存在, 任何 1 个 missing = 12 键被破坏
+    // 13 个键必须全部存在, 任何 1 个 missing = 13 键被破坏
     for k in [
         PhilosophyKey::NotClone,
         PhilosophyKey::NotPerfect,
@@ -185,20 +185,22 @@ fn negative_e2e_12_keys_complete_no_missing() {
         PhilosophyKey::NotUnobservable,
         PhilosophyKey::NotUnscientific,
         PhilosophyKey::NotSelfRelationless,
+        PhilosophyKey::NotUnoptimizable,
     ] {
         assert!(
             keys.contains(&k),
-            "12 键清单缺一不可: {:?} 缺失 = 12 键 hardcode 锁被破坏",
+            "13 键清单缺一不可: {:?} 缺失 = 13 键 hardcode 锁被破坏",
             k
         );
     }
-    // group_id 校验: 6 个分组各 3/3/3/1/1/1
+    // group_id 校验: 6 个分组各 3/3/3/1/1/1 + PHL-07 (group_id 7) 1 个
     let mut phl01 = 0;
     let mut phl02b = 0;
     let mut phl03 = 0;
     let mut phl04 = 0;
     let mut phl05 = 0;
     let mut phl06 = 0;
+    let mut phl07 = 0;
     for k in keys {
         match k.group_id() {
             1 => phl01 += 1,
@@ -207,6 +209,7 @@ fn negative_e2e_12_keys_complete_no_missing() {
             4 => phl04 += 1,
             5 => phl05 += 1,
             6 => phl06 += 1,
+            7 => phl07 += 1,
             _ => panic!("未知 group_id"),
         }
     }
@@ -216,6 +219,7 @@ fn negative_e2e_12_keys_complete_no_missing() {
     assert_eq!(phl04, 1, "PHL-04 must have 1 key");
     assert_eq!(phl05, 1, "PHL-05 must have 1 key");
     assert_eq!(phl06, 1, "PHL-06 must have 1 key");
+    assert_eq!(phl07, 1, "PHL-07 (R125-12 PHL-07 本体论 trust) must have 1 key");
 }
 
 /// 负向集成 2: action.target = ModifyL0HA 必须被 V1+V2+V3 AND 门和 5 重守门双拒
@@ -234,7 +238,7 @@ fn negative_e2e_l0_modify_blocked_by_both_v123_and_5gates() {
     let g = verify_all_five_gates(&engine, &l0_action);
     assert!(g.is_err(), "5 重守门必须拒 L0 HA 修改");
 
-    // (b) V1+V2+V3 AND 门 = BlockByPrinciple (12 键 NotUnobservable)
+    // (b) V1+V2+V3 AND 门 = BlockByPrinciple (13 键 NotUnobservable)
     let guard = DefaultPhilosophyGuard;
     let po = apeireth_core::PermissionOnion {
         l0: apeireth_core::PermissionLayer {
@@ -305,7 +309,7 @@ fn negative_e2e_cache_allow_does_not_leak_to_similar_id() {
     ));
 }
 
-/// 负向集成 4: Pretend* action (12 键故意违反) 全部被 V1 拒绝
+/// 负向集成 4: Pretend* action (13 键故意违反) 全部被 V1 拒绝
 #[test]
 fn negative_e2e_pretend_targets_all_blocked_by_v1() {
     use apeireth_core::{ActionGuard, DefaultPhilosophyGuard, HAMode, HumanAuthority};
@@ -349,7 +353,7 @@ fn negative_e2e_pretend_targets_all_blocked_by_v1() {
         ice_frozen_until: None,
     };
 
-    // 9 个故意违反的 target (12 键覆盖) — 全部应被 V1 拒绝
+    // 9 个故意违反的 target (13 键覆盖) — 全部应被 V1 拒绝
     let cases: Vec<(ActionTarget, PhilosophyKey)> = vec![
         (ActionTarget::PretendClone, PhilosophyKey::NotClone),
         (ActionTarget::PretendPerfect, PhilosophyKey::NotPerfect),

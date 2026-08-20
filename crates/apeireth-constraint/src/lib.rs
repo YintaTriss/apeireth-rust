@@ -89,15 +89,16 @@ pub struct TwelveKeysHardcode;
 impl HardCodeConstraint for TwelveKeysHardcode {
     type Target = usize;
 
-    /// 编译时断言 `apeireth_core::ALL_TWELVE_KEYS.len() == 12`。
+    /// 编译时断言 `apeireth_core::ALL_TWELVE_KEYS.len() == 13`。
     /// 若不等, 调用方编译失败。
+    /// 2026-08-20: 12 → 13 (post commit 13c25025 PHL-07 第 13 键升级, B3 V0.5 30 维 lineage 同步).
     fn const_assert(target: usize) -> usize {
         // 实际 hardcode 触发由 apeireth_core::TWELVE_KEYS_HARDCODE 承担;
         // 本函数是外部调用方在 crate 边界处的"二次断言", 用于展示编译时约束的传递性。
         let _ = apeireth_core::TWELVE_KEYS_HARDCODE; // 触发 apeireth-core 内部硬断言
         assert!(
-            target == 12,
-            "12 键 hardcode 边界断言: 必须保持 V3 9 + v4.1 3 = 12"
+            target == 13,
+            "13 键 hardcode 边界断言: 必须保持 V3 9 + v4.1 3 + PHL-07 1 = 13 (post commit 13c25025)"
         );
         target
     }
@@ -271,8 +272,8 @@ pub struct ConstraintEngine {
 impl ConstraintEngine {
     /// 创建引擎 + 触发 13 键编译时断言
     pub fn new() -> Self {
-        // 守门 1 — 编译时 hardcode: 触发 12 键长度断言
-        let _ = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(12);
+        // 守门 1 — 编译时 hardcode: 触发 13 键长度断言
+        let _ = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(13);
         Self {
             cache: VerdictCache::new(),
         }
@@ -309,10 +310,10 @@ impl PhilosophyKeyAccess for ConstraintEngine {
 // --- v15 主 trait impl: 4 重嵌套守门 ---
 impl FourGates for ConstraintEngine {
     fn gate1_compile_time(&self) -> GateVerdict {
-        // Gate 1: 编译时 hardcode — 触发 12 键断言
-        match <TwelveKeysHardcode as HardCodeConstraint>::const_assert(12) {
-            12 => GateVerdict::Pass,
-            n => GateVerdict::Block(format!("12 键 hardcode 失败: 实际长度 {n}")),
+        // Gate 1: 编译时 hardcode — 触发 13 键断言
+        match <TwelveKeysHardcode as HardCodeConstraint>::const_assert(13) {
+            13 => GateVerdict::Pass,
+            n => GateVerdict::Block(format!("13 键 hardcode 失败: 实际长度 {n}")),
         }
     }
 
@@ -596,7 +597,7 @@ pub fn verify_all_five_gates(
 /// **典型用法**: `pub const _TWELVE_KEYS_OK: usize = verify_at_compile_time();`
 pub const fn verify_at_compile_time() -> usize {
     let _ = apeireth_core::TWELVE_KEYS_HARDCODE;
-    12
+    13
 }
 
 /// 运行时拦截便捷函数 — 等价于 `<engine as FourGates>::gate2_runtime_intercept(action)`。
@@ -679,8 +680,8 @@ mod tests {
         let keys = <ConstraintEngine as PhilosophyKeyAccess>::all_twelve_keys();
         assert_eq!(
             keys.len(),
-            12,
-            "必须复用 apeireth-core ALL_TWELVE_KEYS (12 键)"
+            13,
+            "必须复用 apeireth-core ALL_TWELVE_KEYS (13 键, post PHL-07)"
         );
     }
 
@@ -795,8 +796,8 @@ mod tests {
     /// 测试 9: 守门 1 编译时断言 (const_assert) — 调用不 panic 即通过
     #[test]
     fn test_const_assert_twelve_keys() {
-        let result = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(12);
-        assert_eq!(result, 12);
+        let result = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(13);
+        assert_eq!(result, 13);
     }
 
     // ============================================
@@ -907,12 +908,12 @@ mod tests {
         assert!(v.is_err(), "Critical 风险不能绕过默认拒绝");
     }
 
-    /// 负向 6: 守门 1 编译时断言 — 故意触发 const_assert(13) 应 panic (编译期/运行期都应失败)
+    /// 负向 6: 守门 1 编译时断言 — 故意触发 const_assert(12) 应 panic (12 != 13, 13 键 hardcode 失败)
     #[test]
-    #[should_panic(expected = "12 键 hardcode 边界断言")]
+    #[should_panic(expected = "13 键 hardcode 边界断言")]
     fn negative_const_assert_with_wrong_len_panics() {
-        // 故意断言 13 — 必须 panic
-        <TwelveKeysHardcode as HardCodeConstraint>::const_assert(13);
+        // 故意断言 12 (12 != 13 实际长度) — 必须 panic
+        <TwelveKeysHardcode as HardCodeConstraint>::const_assert(12);
     }
 
     /// 负向 7: 守门 2 缓存命中 Block 时, 必须报告具体 PhilosophyKey (人类可读)
@@ -961,11 +962,13 @@ mod tests {
         assert!(matches!(keys[0], PhilosophyKey::NotClone));
         assert!(matches!(keys[1], PhilosophyKey::NotPerfect));
         assert!(matches!(keys[2], PhilosophyKey::NotUuid));
-        // v4.1 PHL-04/05/06 (3 个新键) 必须在后 3 位
-        let n = keys.len();
-        assert!(matches!(keys[n - 3], PhilosophyKey::NotUnobservable));
-        assert!(matches!(keys[n - 2], PhilosophyKey::NotUnscientific));
-        assert!(matches!(keys[n - 1], PhilosophyKey::NotSelfRelationless));
+        // v4.1 PHL-04/05/06 (3 个新键) 必须在 index 9/10/11
+        // (13 键 = V3 9 + v4.1 3 + PHL-07 1, PHL-07 在 index 12)
+        assert!(matches!(keys[9], PhilosophyKey::NotUnobservable));
+        assert!(matches!(keys[10], PhilosophyKey::NotUnscientific));
+        assert!(matches!(keys[11], PhilosophyKey::NotSelfRelationless));
+        // PHL-07 (R125-12) 在最后 index 12
+        assert!(matches!(keys[12], PhilosophyKey::NotUnoptimizable));
     }
 
     /// 负向 10: Gate 3 物理隔离 — 未缓存 = Block 即便 ActionTarget 是"普通" 也不能放行 (v15)

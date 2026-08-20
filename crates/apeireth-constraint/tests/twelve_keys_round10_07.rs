@@ -30,14 +30,14 @@ fn twelve_keys_hardcode_compile_time_chain_evaluates() {
     // 触发 apeireth-core 内部硬断言
     let _ = TWELVE_KEYS_HARDCODE;
     // 触发 constraint 边界二次断言
-    let _ = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(12);
+    let _ = <TwelveKeysHardcode as HardCodeConstraint>::const_assert(13);
 }
 
 #[test]
 fn constraint_all_twelve_keys_via_trait_returns_exactly_twelve() {
     // 通过 PhilosophyKeyAccess 默认实现 (= 引用 core) 拿 12 键
     let keys = <ConstraintEngine as PhilosophyKeyAccess>::all_twelve_keys();
-    assert_eq!(keys.len(), 12);
+    assert_eq!(keys.len(), 13);
 }
 
 #[test]
@@ -60,10 +60,10 @@ fn constraint_all_twelve_keys_are_byte_identical_to_core() {
 fn constraint_all_twelve_keys_group_distribution_matches() {
     // 12 键分组 (3+3+3+1+1+1) 必须与 core 一致
     let keys = <ConstraintEngine as PhilosophyKeyAccess>::all_twelve_keys();
-    let mut counts = [0u8; 7];
+    let mut counts = [0u8; 8]; // 0 index unused; group 1-7
     for k in keys.iter() {
         let g = k.group_id();
-        assert!(g >= 1 && g <= 6, "未分组 key: {:?}", k);
+        assert!(g >= 1 && g <= 7, "未分组 key: {:?} (group_id={})", k, g);
         counts[g as usize] += 1;
     }
     assert_eq!(counts[1], 3, "PHL-01 (group 1) 必须 3 键");
@@ -101,7 +101,7 @@ fn twelve_key_verdict_cache_can_store_all_twelve_keys() {
         cache.put(k, PhilosophyVerdict::Allow);
         assert!(cache.get(k).is_some(), "key[{}] {:?} 必须能 get", i, k);
     }
-    assert_eq!(cache.filled_count(), 12, "12 键全部在 cache 中");
+    assert_eq!(cache.filled_count(), 13, "13 键全部在 cache 中");
 }
 
 #[test]
@@ -129,5 +129,5 @@ fn twelve_key_verdict_cache_distinguishes_all_twelve_keys() {
             panic!("key[{}] verdict 必须是 Block", i);
         }
     }
-    assert_eq!(cache.block_count(), 12, "12 键全是 Block");
+    assert_eq!(cache.block_count(), 13, "13 键全是 Block");
 }
