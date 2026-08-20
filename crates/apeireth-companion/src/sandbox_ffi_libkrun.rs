@@ -213,7 +213,11 @@ fn real_start(
     // 2. 配置 vCPU + RAM
     let nvcpus = config.vcpus.min(32).max(1) as u8;
     let ram_mib = config.memory_mb.max(1) as u64;
-    let rc = unsafe { libkrun_sys::krun_set_vm_config(ctx, nvcpus, ram_mib) };
+    // 0.9.7 krun_set_vm_config 5 args: ctx, nvcpus, ram_mib, flags, ret_mode
+    //   0 装期: 0u32 -> flags, 0u8 -> ret_mode (默认)
+    // ram_mib u64 -> u32 (try_into unwrap, 0 装期不超 32-bit)
+    let ram_mib_u32: u32 = ram_mib.try_into().unwrap();
+    let rc = unsafe { libkrun_sys::krun_set_vm_config(ctx, nvcpus, ram_mib_u32, 0u32, 0u8) };
     if rc != 0 {
         unsafe { libkrun_sys::krun_free_ctx(ctx) };
         return Err(format!("krun_set_vm_config 失败 (rc={rc})"));
@@ -237,7 +241,9 @@ fn real_start(
     if let Some(kernel) = &config.kernel {
         let cstr = CString::new(kernel.to_string_lossy().into_owned())
             .map_err(|e| format!("kernel 路径含 null 字节: {e}"))?;
-        let rc = unsafe { libkrun_sys::krun_set_kernel(ctx, cstr.as_ptr()) };
+        // 0.9.7 krun_set_kernel 5 args: ctx, kernel, initrd, cmdline, flags
+        //   0 装期: std::ptr::null::<i8>() -> initrd (无), std::ptr::null::<i8>() -> cmdline (无), 0u32 -> flags
+        let rc = unsafe { libkrun_sys::krun_set_kernel(ctx, cstr.as_ptr(), std::ptr::null::<i8>(), std::ptr::null::<i8>(), 0u32) };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx) };
             return Err(format!("krun_set_kernel 失败 (rc={rc})"));
