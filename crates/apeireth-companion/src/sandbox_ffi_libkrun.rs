@@ -242,8 +242,8 @@ fn real_start(
         let cstr = CString::new(kernel.to_string_lossy().into_owned())
             .map_err(|e| format!("kernel 路径含 null 字节: {e}"))?;
         // 0.9.7 krun_set_kernel 5 args: ctx, kernel, initrd, cmdline, flags
-        //   0 装期: std::ptr::null::<i8>() -> initrd (无), std::ptr::null::<i8>() -> cmdline (无), 0u32 -> flags
-        let rc = unsafe { libkrun_sys::krun_set_kernel(ctx, cstr.as_ptr(), std::ptr::null::<i8>(), std::ptr::null::<i8>(), 0u32) };
+        //   0 装期: 0u32 -> initrd (无), std::ptr::null::<i8>() -> cmdline (无), 0u32 -> flags
+        let rc = unsafe { libkrun_sys::krun_set_kernel(ctx, cstr.as_ptr(), 0u32, std::ptr::null::<i8>(), 0u32) };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx) };
             return Err(format!("krun_set_kernel 失败 (rc={rc})"));
