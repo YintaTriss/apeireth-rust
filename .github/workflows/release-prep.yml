@@ -109,6 +109,7 @@ jobs:
             ':(exclude)scripts/release-prep.sh'
             ':(exclude)CHANGELOG.md'
             ':(exclude)docs/04-internal/ci-fix-log-2026-08.md'
+            ':(exclude)reports/**'
             ':(exclude)**/target/**'
             ':(exclude)**/node_modules/**'
             ':(exclude)**/dist/**'
