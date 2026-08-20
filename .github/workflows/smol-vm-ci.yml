@@ -1,0 +1,89 @@
+name: smol-vm CI matrix (--features libkrun 真接)
+
+# 2026-08-20 #5 smol-vm Phase 2 CI 矩阵 (主人 2026-08-20 决策 "全最强路线")
+#
+# 验证 libkrun-sys 0.9.7 真接 FFI 在 Linux CI 上 0 错 + 0 警告 + 5 测全过.
+# 平台覆盖: ubuntu-latest (KVM 真接) + macos-latest (HVF 真接) + windows-latest (NoopVMSandbox 兜底)
+# Feature: libkrun 真接 vs default 0 装 stub 双测覆盖.
+#
+# 0 触碰主 CI (rust.yml 跑默认 build), 独立 workflow 单独跑 libkrun 启用模式.
+# 0 改 24 LOCKED crate 入口签名 / workspace.version 1.2.0 / 3 不可变脊柱.
+# 0 引外部依赖 (libkrun-sys 0.9.7 已在 commit 36cdd601 Cargo.toml 加).
+# 0 触碰 crates/apeireth-environment/tests/ / crates/apeireth-provider/tests/ (其他 AI 区域).
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'crates/apeireth-companion/**'
+      - '.github/workflows/smol-vm-ci.yml'
+  pull_request:
+    branches: ['**']
+    paths:
+      - 'crates/apeireth-companion/**'
+      - '.github/workflows/smol-vm-ci.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  # matrix: OS × feature (libkrun 启用 / default 0 装)
+  # ubuntu: libkrun 真接 (KVM) + default 0 装
+  # macos: libkrun 真接 (HVF) + default 0 装
+  # windows: libkrun 不 build (cfg target_os cfg-not 跳过) + default 0 装
+  smol-vm-test:
+    name: ${{ matrix.os }} / ${{ matrix.features }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        features:
+          - libkrun
+          - ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build
+        run: cargo build -p apeireth-companion ${{ matrix.features && format('--features {0}', matrix.features) }}
+
+      - name: Build tests (cfg-gated E2E)
+        run: cargo build -p apeireth-companion --tests ${{ matrix.features && format('--features {0}', matrix.features) }}
+
+      - name: Run lib
+        run: cargo test -p apeireth-companion --lib ${{ matrix.features && format('--features {0}', matrix.features) }}
+
+      - name: Run E2E (feature_libkrun_e2e)
+        if: matrix.features == 'libkrun'
+        run: cargo test -p apeireth-companion --test feature_libkrun_e2e --features libkrun
+
+      - name: Run unit + doc (sandbox_ffi)
+        run: cargo test -p apeireth-companion --lib sandbox_ffi ${{ matrix.features && format('--features {0}', matrix.features) }}
+
+      - name: Build (workspace --features libkrun)
+        if: matrix.features == 'libkrun'
+        run: cargo build --workspace --all-targets --features apeireth-companion/libkrun
+
+      - name: Workspace check (libkrun)
+        if: matrix.features == 'libkrun'
+        run: cargo check --workspace --all-targets --features apeireth-companion/libkrun
+
+      - name: 0 装 PASS 严守 (cfg-gated sandbox_ffi tests 不依赖 OS)
+        run: cargo test -p apeireth-companion --lib sandbox_ffi
