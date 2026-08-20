@@ -62,6 +62,9 @@ jobs:
           # 守门宽限: pure fmt diff (去除所有空白后字节相等) 放行
           # 理由: 8 哲学锚 S-2 实事求是 + O-5 不假装 — fmt 是工具链, 0 改 logic;
           #       R148 (2026-08-13) 24 LOCKED 已形式撤销, fmt 触碰不应触发 exit 1.
+          # 检测方法: git diff --word-diff=porcelain 输出 ~ (whitespace-only) / + / - line
+          #       - 全 ~ 无 +/- = pure whitespace 重排 (rustfmt default), 放行
+          #       - 任何 + / - line (新增/删除 word) = 真的 logic 改, 人工 review 必要
           HARD_HIT=""
           while IFS= read -r f; do
             [ -z "$f" ] && continue
@@ -69,12 +72,17 @@ jobs:
               *.rs) ;;
               *) echo "  logic 改 (非 .rs): $f"; HARD_HIT="$HARD_HIT$f\n"; continue;;
             esac
-            OLD=$(git show "$BASE:$f" 2>/dev/null | tr -d ' \t\n\r' | md5sum | awk '{print $1}')
-            NEW=$(git show "HEAD:$f" 2>/dev/null | tr -d ' \t\n\r' | md5sum | awk '{print $1}')
-            if [ "$OLD" = "$NEW" ]; then
-              echo "  pure fmt: $f (去 whitespace 后 hash 相同, 放行)"
+            # 提取 word-diff 的 +/- 行 (排除 ~ 纯 whitespace)
+            # git diff --word-diff=porcelain 格式:
+            #   ~ 行: 仅空白变化 (rustfmt default 折行)
+            #   + 行: 新增 word
+            #   - 行: 删除 word
+            WORD_DIFF=$(git diff --word-diff=porcelain "$BASE"...HEAD -- "$f" 2>/dev/null | grep -E '^[+-][^-+~ ]' || true)
+            if [ -z "$WORD_DIFF" ]; then
+              echo "  pure fmt: $f (无 +/- word 改, 仅 whitespace 重排, 放行)"
             else
-              echo "  logic 改: $f (去 whitespace 后 hash 不同, 必须人工 review)"
+              echo "  logic 改: $f (有 word-level 增删, 必须人工 review):"
+              echo "$WORD_DIFF" | head -5
               HARD_HIT="$HARD_HIT$f\n"
             fi
           done <<< "$HITS"
