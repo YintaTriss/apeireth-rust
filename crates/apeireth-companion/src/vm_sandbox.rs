@@ -353,8 +353,33 @@ impl VMSandbox for NoopVMSandbox {
 ///
 /// **当前状态**: 仅返 Noop (Stage 2 trait 口预留, 实装待下一轮).
 pub fn default_vm_sandbox() -> Box<dyn VMSandbox> {
-    // 平台检测占位 — 实装时按 `#[cfg(target_os = "linux")]` / `"macos"` / `"windows"` 分支.
-    // 当前一律返 Noop, 严守 0 装 PASS 红线.
+    // 2026-08-20 #5 smol-vm Phase 1 工厂 3 段 cfg 守门 (per spec §6.4.9):
+    // - Linux + `feature = "libkrun"` + probe 命中 → LibkrunVMSandbox
+    // - macOS + `feature = "libkrun"` + probe 命中 → LibkrunVMSandbox (HVF 后端)
+    // - 其它 / feature 关闭 / probe 失败 → NoopVMSandbox (0 装 1:1 兼容)
+    //
+    // 当前 Phase 1: `feature = "libkrun"` 关闭, LibkrunVMSandbox::start() 永远 Err
+    // (probe-only stub), 所以 `default_vm_sandbox()` 实际仍返 NoopVMSandbox — 0 装 1:1 行为.
+    // Phase 2 真接 FFI 时, --features libkrun + LibkrunVMSandbox::start 真 Ok 才会触发真 VM spawn.
+    #[cfg(all(target_os = "linux", feature = "libkrun"))]
+    {
+        use crate::sandbox_ffi_libkrun::LibkrunVMSandbox;
+        let backend = LibkrunVMSandbox;
+        if backend.available() {
+            return Box::new(backend);
+        }
+        eprintln!("[default_vm_sandbox] Linux + libkrun feature 但 probe 失败 (KVM 不可用 / libkrun.so 未装), 落 Noop 兜底 (per spec §6.4.9)");
+    }
+    #[cfg(all(target_os = "macos", feature = "libkrun"))]
+    {
+        use crate::sandbox_ffi_libkrun::LibkrunVMSandbox;
+        let backend = LibkrunVMSandbox;
+        if backend.available() {
+            return Box::new(backend);
+        }
+        eprintln!("[default_vm_sandbox] macOS + libkrun feature 但 probe 失败 (HVF 不可用 / libkrun.dylib 未装), 落 Noop 兜底 (per spec §6.4.9)");
+    }
+    // 其它一切情况 (Windows / 0 装 / feature 关闭 / probe 失败) → NoopVMSandbox
     Box::new(NoopVMSandbox)
 }
 

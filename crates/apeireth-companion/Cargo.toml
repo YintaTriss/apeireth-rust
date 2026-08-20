@@ -56,6 +56,14 @@ apeireth-bus = { path = "../apeireth-bus" }
 tract-onnx = "0.21"
 ndarray = "0.15"
 
+# 2026-08-20 #5 smol-vm / libkrun 真接 (per reports/smol-vm-implementation-spec-2026-08-20.md):
+# [features] stub 备用. Phase 1 (commit 176a4003) feature 关闭, 纯 0 装 stub; Phase 2 (待
+# 主人拍板 deny 放宽 / 子 crate 隔离) --features libkrun 启用真接 FFI.
+# 当前默认 build = 0 装 PASS, 1:1 兼容现状.
+[features]
+default = []
+libkrun = []
+
 # P3#16 microsandbox 落地: Windows Job Object 加固 (exec_worker 隔离层)
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
