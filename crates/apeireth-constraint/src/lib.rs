@@ -61,7 +61,9 @@ pub trait PhilosophyKeyAccess: Send + Sync {
         apeireth_core::ALL_THIRTEEN_KEYS
             .as_slice()
             .try_into()
-            .expect("apeireth-core ALL_THIRTEEN_KEYS 长度必须是 13 (V3 9 + v4.1 3 + R125-12 PHL-07)")
+            .expect(
+                "apeireth-core ALL_THIRTEEN_KEYS 长度必须是 13 (V3 9 + v4.1 3 + R125-12 PHL-07)",
+            )
     }
 
     /// 返回当前 action 的 verdict (子类实现 = 真实业务守门)
