@@ -26,7 +26,7 @@
 /**
  * **STUB MODE 守门标志** (K-1 强校验 #4): 编译期 hardcode = `true`.
  *
- * R21 真接 `apeireth-api` HTTP/WS 时, **必须经 6 哲学锚 (S-1/S-2/O-2/O-3/O-4/O-5)
+ * R21 真接 `apeireth-api` HTTP/WS 时, **必须经 8 哲学锚 (S-1/S-2/S-3 质量工程化 NEW/O-1 安全优先 NEW/O-2/O-3/O-4/O-5, baseline 2026-08-19)
  * + 主人审才能改 `false`**.
  */
 #define STUB_MODE true
@@ -515,7 +515,7 @@ char *apeireth_sdk_hash_request(const char *method,
 /**
  * **C-ABI fn #3**: `apeireth_sdk_version() -> *const c_char`.
  *
- * **不漂移**: 复用 `apeireth_sdk::version::SDK_VERSION` 公共 API, 0 改 workspace.version 1.1.0.
+ * **不漂移**: 复用 `apeireth_sdk::version::SDK_VERSION` 公共 API, 0 改 workspace.version 1.2.0 (双轴制: 产品轴 tag v1.0.0 + workspace 轴 1.2.0).
  * 返 Rust static str, 生命周期 'static, 0 需要 free (1:1 libc `getenv` pattern).
  */
 const char *apeireth_sdk_version(void);
