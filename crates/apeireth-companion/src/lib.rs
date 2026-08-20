@@ -37,7 +37,11 @@
 //! - 不碰 R11 baseline 三值
 //! - 不假装"关系是真实的"
 
-#![deny(unsafe_code)]
+#![cfg_attr(feature = "libkrun", allow(unsafe_code))]
+// 2026-08-20 #5 smol-vm Phase 2: cfg-gated deny 放宽 — 仅 `--features libkrun` 启用时允许 unsafe.
+// 默认 build (feature 关闭) 仍严格 deny unsafe (1:1 兼容现状 / 0 装 PASS).
+// unsafe FFI 收敛在 `sandbox_ffi_libkrun.rs` 单文件 (#![allow(unsafe_code)] 内),
+// 跟 `job_object.rs:29` 同模式 (单文件 FFI 收敛).
 
 pub mod bond;
 pub mod consciousness_bridge;

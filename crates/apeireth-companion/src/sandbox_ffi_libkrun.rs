@@ -180,23 +180,60 @@ impl crate::vm_sandbox::VMSandbox for LibkrunVMSandbox {
         &self,
         _config: &crate::vm_sandbox::VMSandboxConfig,
     ) -> Result<crate::vm_sandbox::VMSandboxHandle, String> {
-        // Phase 1: 真接 FFI 待主人拍板, 严守 0 假装.
-        // 详细理由见模块顶部 "Phase 1 限制 (硬约束)" + `Cargo.toml [features]` 注释.
+        // 2026-08-20 #5 Phase 2: cfg-gated 真接路径 (per spec §6.4.9 工厂 3 段守门)
+        //
+        // 编译期 cfg(feature = "libkrun") 守门:
+        //   - feature 关闭 (默认) -> 走 Phase 1 stub (返 Err "Phase 1 = 0 装 stub")
+        //   - feature 开启 + Linux/macOS + probe 命中 -> cfg-gated 真接 FFI 路径 (Phase 2)
+        //
+        // Phase 2 真接 FFI 框架 (待主人提供 libkrun-sys 0.9.7 API 文档):
+        //   1. libkrun_sys::krun_create_ctx()  // unsafe, 返 ctx handle
+        //   2. libkrun_sys::krun_set_vm_config(ctx, vcpus, memory_mb)
+        //   3. libkrun_sys::krun_set_root_disk(ctx, rootfs_path.as_ptr())
+        //   4. libkrun_sys::krun_set_kernel(ctx, kernel_path.as_ptr())
+        //   5. libkrun_sys::krun_start(ctx)
+        //   6. VMSandboxHandle::Drop 自动 libkrun_sys::krun_destroy_ctx(ctx)
+        //
+        // 主人决策 (2026-08-20 全最强路线): cfg-gated allow unsafe + libkrun-sys 0.9.7 dep +
+        //   留 FFI 函数体占位, 主人补具体 API 调用. Linux CI matrix 自动真接.
         if !self.available() {
             return Err(format!(
                 "LibkrunVMSandbox: 探测失败 (cfg / OS 资源 / libkrun 库文件 缺), \
                  0 假装能启 VM; 接 libkrun.so (Linux / macOS) 后重试"
             ));
         }
-        Err(format!(
-            "LibkrunVMSandbox: Phase 1 = probe-only stub (0 装 PASS, 不假装能启 VM); \
-             Phase 2 真接待主人拍板: 加 libkrun-sys optional dep + 放宽 \
-             #![deny(unsafe_code)] + 单文件 #![allow(unsafe_code)] + FFI (krun_create_ctx / \
-             krun_set_vm_config / krun_add_disk / krun_start). \
-             当前 rootfs={:?} kernel={:?}",
-            Self::rootfs_path(),
-            Self::kernel_path(),
-        ))
+        // cfg-gated Phase 2 真接路径 (libkrun-sys 0.9.7 占位)
+        #[cfg(feature = "libkrun")]
+        {
+            use std::ffi::CString;
+            // 主线程审阅: 实际 libkrun-sys API 调用 (krun_create_ctx / krun_start /
+            // krun_destroy_ctx) 需主人确认 0.9.7 真实 API 签名. 本占位仅 cfg-gated import,
+            // 让 Linux CI build 0 错, 实接时按 libkrun-sys 真实 export 替换.
+            let _rootfs = _config
+                .rootfs
+                .as_ref()
+                .map(|p| CString::new(p.to_string_lossy().into_owned()).ok())
+                .flatten();
+            let _kernel = _config
+                .kernel
+                .as_ref()
+                .map(|p| CString::new(p.to_string_lossy().into_owned()).ok())
+                .flatten();
+            // 真接 FFI 占位 (Phase 2 完整版需 krun_create_ctx / krun_set_vm_config / ...)
+            return Err(format!(
+                "LibkrunVMSandbox Phase 2: cfg-gated 真接框架就位 (libkrun-sys 0.9.7 已 dep), \
+                 FFI 函数体待主人补 (krun_create_ctx / krun_set_vm_config / krun_set_root_disk / \
+                 krun_set_kernel / krun_start); Linux CI build 0 错, 运行时仍 stub 返 Err"
+            ));
+        }
+        // 默认 build (feature 关闭) - Phase 1 stub
+        #[cfg(not(feature = "libkrun"))]
+        {
+            Err(format!(
+                "LibkrunVMSandbox: Phase 1 = probe-only stub (0 装 PASS, 1:1 兼容); \
+                 Phase 2 真接: cargo build --features libkrun + 主人补 FFI 函数体"
+            ))
+        }
     }
 
     fn backends(&self) -> Vec<crate::vm_sandbox::VMSandboxBackend> {

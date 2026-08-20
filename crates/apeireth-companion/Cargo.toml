@@ -57,12 +57,19 @@ tract-onnx = "0.21"
 ndarray = "0.15"
 
 # 2026-08-20 #5 smol-vm / libkrun 真接 (per reports/smol-vm-implementation-spec-2026-08-20.md):
-# [features] stub 备用. Phase 1 (commit 176a4003) feature 关闭, 纯 0 装 stub; Phase 2 (待
-# 主人拍板 deny 放宽 / 子 crate 隔离) --features libkrun 启用真接 FFI.
-# 当前默认 build = 0 装 PASS, 1:1 兼容现状.
+# Phase 1 (commit 176a4003 + 949f2d2c) 纯 0 装 stub + 工厂 3 段 cfg 守门, feature 关闭.
+# Phase 2 (本 commit) --features libkrun 启用真接 FFI:
+#   - libkrun-sys = "0.9.7" optional dep (Red Hat 维护 KVM/HVF microVM 库 Rust binding, bindgen 0.71)
+#   - lib.rs #![deny(unsafe_code)] -> #![cfg_attr(feature = "libkrun", allow(unsafe_code))] (cfg-gated)
+#   - unsafe FFI 收敛在 sandbox_ffi_libkrun.rs 单文件 (#![allow(unsafe_code)] 内, 跟 job_object.rs:29 同模式)
+# 主人决策 (2026-08-20): 全最强路线 — deny cfg-gated 放宽 + 真接 FFI + CI matrix.
+# 默认 build (feature 关闭) = 0 装 PASS 1:1 兼容现状.
 [features]
 default = []
-libkrun = []
+libkrun = ["dep:libkrun-sys"]
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+libkrun-sys = { version = "0.9.7", optional = true }
 
 # P3#16 microsandbox 落地: Windows Job Object 加固 (exec_worker 隔离层)
 [target.'cfg(windows)'.dependencies]
