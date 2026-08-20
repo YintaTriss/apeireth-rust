@@ -58,8 +58,15 @@ impl ServeProc {
                     .and_then(|p| p.parent())
                     .expect("workspace_root 解析");
                 // Windows 路径加 .exe 后缀
-                let exe_path = workspace_root.join("target").join("debug").join("examples")
-                    .join(if cfg!(windows) { "companion_serve.exe" } else { "companion_serve" });
+                let exe_path = workspace_root
+                    .join("target")
+                    .join("debug")
+                    .join("examples")
+                    .join(if cfg!(windows) {
+                        "companion_serve.exe"
+                    } else {
+                        "companion_serve"
+                    });
                 exe_path.to_string_lossy().into_owned()
             });
         let exe_for_err = exe.clone();
@@ -150,10 +157,7 @@ fn http1_get(host_port: &str, path: &str, api_key: &str) -> (u16, String) {
     let raw = String::from_utf8_lossy(&buf).into_owned();
 
     // 解析 status line: "HTTP/1.0 200 OK\r\n..."
-    let status_line = raw
-        .split("\r\n")
-        .next()
-        .unwrap_or("");
+    let status_line = raw.split("\r\n").next().unwrap_or("");
     let status: u16 = status_line
         .split_whitespace()
         .nth(1)
@@ -214,10 +218,7 @@ fn l3_real_socket_get_unknown_path_404() {
 
     let (status, body) = http1_get(&format!("127.0.0.1:{port}"), "/zzz", "test-key");
 
-    assert_eq!(
-        status, 404,
-        "GET /zzz (未知路径) 应返 404, body={body}"
-    );
+    assert_eq!(status, 404, "GET /zzz (未知路径) 应返 404, body={body}");
 
     drop(proc);
 }

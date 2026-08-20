@@ -49,8 +49,8 @@ pub mod consciousness_bridge;
 pub mod approval_requests;
 pub mod audit;
 mod bridge_kani_proofs; // R173 bridge 5 of 7
-pub mod capability;
 pub mod capabilities_manifest; // PR #2: sanctuary front-desk 能力清单 (3 维度 supported/available/reason + current_manifest(), 0 触碰既有)
+pub mod capability;
 pub mod causal_world_model; // TP32/W2+W3: 世界模型第二层 因果结构图推演 (memory_graph s/p/o 因果网 + MCTS + W3 边挖掘 + LLM 提议边)
 pub mod confidence;
 pub mod constitution_gate;

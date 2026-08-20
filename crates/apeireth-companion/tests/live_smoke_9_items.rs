@@ -55,9 +55,11 @@ use tempfile::tempdir;
 // ============================================================
 
 fn in_mem_store() -> Arc<SqliteMemoryStore> {
-    Arc::new(SqliteMemoryStore::open_in_memory().expect(
-        "SqliteMemoryStore::open_in_memory 应 0 装可用 (bundled SQLite); 失败 = 真破坏",
-    ))
+    Arc::new(
+        SqliteMemoryStore::open_in_memory().expect(
+            "SqliteMemoryStore::open_in_memory 应 0 装可用 (bundled SQLite); 失败 = 真破坏",
+        ),
+    )
 }
 
 fn sample_episode(id: &str, session: &str, content: &str) -> CoreEpisode {
@@ -113,14 +115,14 @@ fn smoke_01_health_api_shape_contract() {
 
     // 真实断言: body 含 "status" 字段 (spec 要求的契约).
     assert!(body.get("status").is_some(), "body.status 字段必须存在");
-    assert_eq!(
-        body["status"], "ok",
-        "body.status 必须 = \"ok\" (健康标记)"
-    );
+    assert_eq!(body["status"], "ok", "body.status 必须 = \"ok\" (健康标记)");
     // 路由名断言: /health 是 axum 路由 (server.rs:124 `.route("/health", get(health))`).
     // 字符串常量保证未被误改.
     const ROUTE: &str = "/health";
-    assert!(ROUTE.starts_with('/'), "/health 是 axum 路由, 必须以 / 开头");
+    assert!(
+        ROUTE.starts_with('/'),
+        "/health 是 axum 路由, 必须以 / 开头"
+    );
     assert_eq!(ROUTE.len(), 7, "/health 长度 = 7 字符 (漂移即破坏)");
 }
 
@@ -174,10 +176,7 @@ fn smoke_03_sqlite_memory_put_then_recent_roundtrip() {
     let recent = store
         .recent_episodes("me", 10)
         .expect("recent_episodes 应 0 装 PASS");
-    assert!(
-        !recent.is_empty(),
-        "recent_episodes 应返至少 1 条 (刚 put)"
-    );
+    assert!(!recent.is_empty(), "recent_episodes 应返至少 1 条 (刚 put)");
     let hit = recent
         .iter()
         .find(|e| e.id == "ep-smoke-1")
@@ -218,7 +217,11 @@ fn smoke_04_memory_graph_add_fact_then_query() {
 
     // 按 predicate 查
     let by_pred = g.query(&GraphQuery::new().predicate("喜欢"));
-    assert_eq!(by_pred.len(), 1, "predicate='喜欢' 应 1 条 (主人/喜欢/烟火)");
+    assert_eq!(
+        by_pred.len(),
+        1,
+        "predicate='喜欢' 应 1 条 (主人/喜欢/烟火)"
+    );
     assert_eq!(by_pred[0].object, "烟火");
 
     // 按 s+p 组合查
@@ -304,7 +307,10 @@ fn smoke_06_approval_request_then_grant_lifecycle() {
     let approved_after = list(&store, Some("approved"));
     assert_eq!(pending_after.len(), 0, "批准后 pending 应清空");
     assert_eq!(approved_after.len(), 1, "批准后 approved 应 1 条");
-    assert_eq!(approved_after[0].chain, chain, "approved 的 chain 与原 chain 同");
+    assert_eq!(
+        approved_after[0].chain, chain,
+        "approved 的 chain 与原 chain 同"
+    );
     assert!(approved_after[0].rev >= 2, "rev 应 >= 2 (append-only)");
 
     // 阶段 4: 重复批准报错 (当前已 approved, 非 pending)
@@ -333,9 +339,7 @@ fn smoke_07_goal_service_create_then_current_list() {
     assert_eq!(g.max_goal_rounds, 3);
 
     // current = list 的单目标视图
-    let cur = svc
-        .current()
-        .expect("current 应有 1 条 (刚 create)");
+    let cur = svc.current().expect("current 应有 1 条 (刚 create)");
     assert_eq!(cur.id, g.id);
     assert_eq!(cur.objective, "smoke goal: 学习 9 项 smoke test 全部 PASS");
 
@@ -350,7 +354,9 @@ fn smoke_07_goal_service_create_then_current_list() {
     assert_eq!(g3.revision, 3);
 
     // 完成后可新建 (替换语义)
-    let g4 = svc.create("smoke goal: 第二个目标", 1).expect("create #2 OK");
+    let g4 = svc
+        .create("smoke goal: 第二个目标", 1)
+        .expect("create #2 OK");
     assert_eq!(g4.revision, 1, "新目标 revision 重新从 1 起算");
     assert_eq!(g4.objective, "smoke goal: 第二个目标");
 }
@@ -408,12 +414,9 @@ async fn smoke_09_l0_bus_publish_then_topic_count() {
 
     // publish 也会创建 topic (apeireth-bus/src/l0.rs:100-101
     // `map.entry(topic).or_insert_with(|| broadcast::channel(cap).0)`)
-    bus.publish(
-        "smoke.topic",
-        BusMessage::new("smoke payload".to_string()),
-    )
-    .await
-    .expect("L0Bus::publish 应 0 装 PASS");
+    bus.publish("smoke.topic", BusMessage::new("smoke payload".to_string()))
+        .await
+        .expect("L0Bus::publish 应 0 装 PASS");
 
     // publish 后 topic_count = 1 (publish 自动注册 topic)
     assert_eq!(

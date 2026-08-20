@@ -89,7 +89,10 @@ async fn attack_prompt_injection_audit() {
     let call = call_for("WebSearch", json!({"query": injection}));
 
     // 注入应被原样记录 (audit 是 inert data, 不解析不执行)
-    records.record(&call, &json!({"ok": true}), false).await.unwrap();
+    records
+        .record(&call, &json!({"ok": true}), false)
+        .await
+        .unwrap();
 
     let v = audit.call(json!({"tool_name": "WebSearch"})).await.unwrap();
     assert_eq!(v["count"], json!(1), "注入留痕应作为 1 条 inert data 记录");
@@ -141,7 +144,10 @@ async fn attack_secret_leak_through_log() {
         "WebFetch",
         json!({"url": format!("https://x.example/?api_key={leaked_secret}")}),
     );
-    records.record(&audit_call, &json!({"ok": true}), true).await.unwrap();
+    records
+        .record(&audit_call, &json!({"ok": true}), true)
+        .await
+        .unwrap();
 
     // 断言 1: audit 输出不含 key 原文 (masked 路径)
     let v = audit.call(json!({"tool_name": "WebFetch"})).await.unwrap();
@@ -163,7 +169,8 @@ async fn attack_secret_leak_through_log() {
     // 断言 3: 即使攻击者把 key 塞在 audit args 里 (masked=false), audit
     // 工具仍按工具名返回 (我们写的是 masked=true, 这里断言 masked=true 标签)
     assert_eq!(
-        v["records"][0]["masked"], json!(true),
+        v["records"][0]["masked"],
+        json!(true),
         "带 secret 的 audit 记录必须标 masked=true"
     );
     assert_eq!(
@@ -196,9 +203,15 @@ async fn attack_sensitive_pii_through_trace() {
         json!({"username": "alice", "password": "secret123"}),
     );
 
-    records.record(&call, &sensitive_payload, true).await.unwrap();
+    records
+        .record(&call, &sensitive_payload, true)
+        .await
+        .unwrap();
 
-    let v = audit.call(json!({"tool_name": "LoginPortal"})).await.unwrap();
+    let v = audit
+        .call(json!({"tool_name": "LoginPortal"}))
+        .await
+        .unwrap();
     let dump = serde_json::to_string(&v).unwrap();
 
     // 1. password 原文不应泄漏
@@ -227,8 +240,7 @@ async fn attack_sensitive_pii_through_trace() {
     );
 
     // 5. redact_secrets() 兜底: 即使 secret 出现在其他文本, 也应擦除
-    let text_with_secret =
-        "auth header: Authorization=Bearer abcdefghijklmnop888 user=alice";
+    let text_with_secret = "auth header: Authorization=Bearer abcdefghijklmnop888 user=alice";
     let scrubbed = redact_secrets(text_with_secret);
     assert!(
         !scrubbed.contains("abcdefghijklmnop888"),
@@ -319,7 +331,10 @@ async fn attack_redaction_preserves_audit_trail() {
         "WebFetch",
         json!({"url": "https://api.example/?key=sk-abcdefghijklmnop777"}),
     );
-    records.record(&call, &json!({"status": 200, "body": "ok"}), true).await.unwrap();
+    records
+        .record(&call, &json!({"status": 200, "body": "ok"}), true)
+        .await
+        .unwrap();
 
     let v = audit.call(json!({"tool_name": "WebFetch"})).await.unwrap();
     assert_eq!(v["count"], json!(1));
@@ -339,10 +354,7 @@ async fn attack_redaction_preserves_audit_trail() {
     );
 
     // 3. status / success 保留
-    assert!(
-        rec["status"].is_string(),
-        "status 字段必须保留: {rec}"
-    );
+    assert!(rec["status"].is_string(), "status 字段必须保留: {rec}");
     assert_eq!(rec["success"], json!(true), "success 字段必须保留");
 
     // 4. masked 标签正确
@@ -361,7 +373,10 @@ async fn attack_redaction_preserves_audit_trail() {
     // return_content (audit 链路不展开 masked 的 call, 只展开 unmasked 的).
     // 这里验证: redact 仅作用于 masked args, 不污染 tool_name / time / status.
     let dump = serde_json::to_string(rec).unwrap();
-    assert!(!dump.contains("abcdefghijklmnop777"), "secret 不外泄: {dump}");
+    assert!(
+        !dump.contains("abcdefghijklmnop777"),
+        "secret 不外泄: {dump}"
+    );
 
     // 7. 多条记录: redact 仅命中 masked=true 的条目, 不影响 unmasked 兄弟
     let safe_call = call_for("WebSearch", json!({"query": "今天天气"}));

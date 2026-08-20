@@ -425,11 +425,7 @@ mod tests {
         let m = current_manifest();
         let mut seen = std::collections::HashSet::new();
         for c in &m.capabilities {
-            assert!(
-                seen.insert(c.name),
-                "capability name 重复: {}",
-                c.name
-            );
+            assert!(seen.insert(c.name), "capability name 重复: {}", c.name);
         }
     }
 
@@ -476,11 +472,7 @@ mod tests {
                 );
                 // reason 不能是空串
                 let r = c.reason.unwrap();
-                assert!(
-                    !r.trim().is_empty(),
-                    "reason 不能空字符串: {}",
-                    c.name
-                );
+                assert!(!r.trim().is_empty(), "reason 不能空字符串: {}", c.name);
             } else {
                 // available=true 时, 出于简洁 reason=None
                 assert!(
@@ -507,20 +499,49 @@ mod tests {
         // 删除临时文件: manifest 仍一致 (0 副作用验证)
         std::fs::remove_file(&probe).expect("remove probe");
         let m2 = current_manifest();
-        assert_eq!(
-            m1, m2,
-            "文件系统变化对 manifest 0 影响 (纯观察器)"
-        );
+        assert_eq!(m1, m2, "文件系统变化对 manifest 0 影响 (纯观察器)");
     }
 
     /// 测 7 (ext): Capability::effective 三值合一的真值表.
     #[test]
     fn capability_effective_truth_table() {
         let cases = [
-            (Capability { name: "a", supported: true,  available: true,  reason: None }, true),
-            (Capability { name: "b", supported: true,  available: false, reason: Some("x") }, false),
-            (Capability { name: "c", supported: false, available: true,  reason: None }, false),
-            (Capability { name: "d", supported: false, available: false, reason: Some("y") }, false),
+            (
+                Capability {
+                    name: "a",
+                    supported: true,
+                    available: true,
+                    reason: None,
+                },
+                true,
+            ),
+            (
+                Capability {
+                    name: "b",
+                    supported: true,
+                    available: false,
+                    reason: Some("x"),
+                },
+                false,
+            ),
+            (
+                Capability {
+                    name: "c",
+                    supported: false,
+                    available: true,
+                    reason: None,
+                },
+                false,
+            ),
+            (
+                Capability {
+                    name: "d",
+                    supported: false,
+                    available: false,
+                    reason: Some("y"),
+                },
+                false,
+            ),
         ];
         for (c, expected) in cases {
             assert_eq!(
