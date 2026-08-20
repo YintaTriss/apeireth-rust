@@ -100,7 +100,7 @@ jobs:
             echo "base_sha=$BASE" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: "守门 1: 0 触碰 24 LOCKED crate"
+      - name: "守门 1: 0 触碰 24 LOCKED crate (pure fmt diff 放行)"
         env:
           BASE: ${{ steps.base.outputs.base_sha }}
         run: |
@@ -113,12 +113,38 @@ jobs:
           LOCKED="apeireth-supervisor apeireth-agent apeireth-council apeireth-bus apeireth-protocol apeireth-mcp apeireth-tool-registry apeireth-tool-runtime apeireth-graph apeireth-pipeline apeireth-tool-approval apeireth-extension apeireth-evolution apeireth-api apeireth-core apeireth-memory apeireth-asi apeireth-tools apeireth-cli apeireth-bench apeireth-cognition apeireth-action apeireth-life-force apeireth-constraint"
           LOCKED_REGEX=$(echo "$LOCKED" | tr ' ' '|')
           HITS=$(git diff --name-only "$BASE"...HEAD -- 'crates/*.rs' 'crates/*/Cargo.toml' 2>/dev/null | grep -E "^crates/($LOCKED_REGEX)/" || true)
-          if [ -n "$HITS" ]; then
-            echo "::error::24 LOCKED crate 被触碰:"
-            echo "$HITS" | while IFS= read -r f; do echo "  - $f"; done
+          if [ -z "$HITS" ]; then
+            echo "✅ 0 触碰 24 LOCKED crate"
+            exit 0
+          fi
+          # 守门宽限: pure fmt diff (去除所有空白后字节相等) 放行
+          # 理由: 8 哲学锚 S-2 实事求是 + O-5 不假装 — fmt 是工具链, 0 改 logic;
+          #       R148 (2026-08-13) 24 LOCKED 已形式撤销, fmt 触碰不应触发 exit 1.
+          # 检测方法: 对每个 LOCKED 改的 .rs 文件, 取出 master + HEAD 内容, tr -d ' \t\n\r'
+          #       后比较, 0 差异 = pure fmt, 放行; 有差异 = logic 改, fail.
+          HARD_HIT=""
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            # 仅 .rs 文件做内容比较; .toml 文件 (Cargo.toml) 不进 fmt 检查
+            case "$f" in
+              *.rs) ;;
+              *) echo "  logic 改 (非 .rs): $f"; HARD_HIT="$HARD_HIT$f\n"; continue;;
+            esac
+            OLD=$(git show "$BASE:$f" 2>/dev/null | tr -d ' \t\n\r' | md5sum | awk '{print $1}')
+            NEW=$(git show "HEAD:$f" 2>/dev/null | tr -d ' \t\n\r' | md5sum | awk '{print $1}')
+            if [ "$OLD" = "$NEW" ]; then
+              echo "  pure fmt: $f (去 whitespace 后 hash 相同, 放行)"
+            else
+              echo "  logic 改: $f (去 whitespace 后 hash 不同, 必须人工 review)"
+              HARD_HIT="$HARD_HIT$f\n"
+            fi
+          done <<< "$HITS"
+          if [ -n "$HARD_HIT" ]; then
+            echo "::error::24 LOCKED crate logic 触碰 (非 fmt):"
+            echo -e "$HARD_HIT" | grep -v '^$'
             exit 1
           fi
-          echo "✅ 0 触碰 24 LOCKED crate"
+          echo "✅ 24 LOCKED crate 仅纯 fmt 改 (logic 0 触碰)"
 
       - name: "守门 2: workspace.version 1.2.0 不变"
         env:
