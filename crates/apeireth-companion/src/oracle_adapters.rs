@@ -1552,4 +1552,237 @@ mod tp25_tests {
         assert_ne!(arima.provider(), noop.provider());
         assert_ne!(naive.provider(), noop.provider());
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // 2026-08-20 TP25 (tract-onnx 轻量版): LightGBMProvider 6 测
+    //   - 4 永远跑: default_noop / distinguishable / blendable / too_short
+    //   - 2 fixture-gated: e2e_1step / e2e_nstep_with_ci
+    // ──────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn lightgbm_default_is_noop_with_honest_err() {
+        use super::LightGBMProvider;
+        let p = LightGBMProvider::default();
+        assert_eq!(p.provider(), "lightgbm-noop");
+        let series: Vec<f64> = (0..100).map(|t| 100.0 + (t as f64 / 5.0).sin()).collect();
+        let err = p.predict(&series, 3).unwrap_err();
+        assert!(matches!(err, AdapterError::Degraded(_)), "{err:?}");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("LightGBM") && msg.contains("未装载"),
+            "Degraded 错误应明示 LightGBM 未装载原因, 实测: {msg}"
+        );
+    }
+
+    #[test]
+    fn lightgbm_provider_distinguishable_from_arima_naive_noop() {
+        use super::LightGBMProvider;
+        let lgbm = LightGBMProvider::default();
+        let arima = ArimaPredictor::default();
+        let naive = NaiveBaselinePredictor::default();
+        let noop = NoopTimeSeriesPredictor;
+        assert_eq!(lgbm.provider(), "lightgbm-noop");
+        assert_eq!(arima.provider(), "arima-1-1-1");
+        assert_eq!(naive.provider(), "naive-baseline");
+        assert_eq!(noop.provider(), "noop");
+        let names = [lgbm.provider(), arima.provider(), naive.provider(), noop.provider()];
+        for i in 0..names.len() {
+            for j in (i + 1)..names.len() {
+                assert_ne!(names[i], names[j], "provider 冲突: {names:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn lightgbm_blendable_with_llm_text_prediction() {
+        let digital = 0.65_f64;
+        let textual = 0.70;
+        let blended = blend_predictions(digital, textual, 0.8, 0.5);
+        assert!(
+            (blended - 0.6692307).abs() < 1e-6,
+            "blended={blended} (期望 ≈0.6692)"
+        );
+        assert!((0.0..=1.0).contains(&blended), "blend 应 ∈ [0,1], 实测 {blended}");
+    }
+
+    #[test]
+    fn lightgbm_input_too_short_returns_degraded() {
+        use super::LightGBMProvider;
+        let p = LightGBMProvider::default();
+        let err = p.predict(&[1.0, 2.0, 3.0], 3).unwrap_err();
+        assert!(matches!(err, AdapterError::Degraded(_)), "{err:?}");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("LightGBM"),
+            "Degraded 应含 LightGBM 标识, 实测: {msg}"
+        );
+    }
+
+    // ──── Fixture-gated E2E (脱机 PASS: fixture 不在 → 早返) ────
+
+    #[test]
+    fn lightgbm_e2e_1step_with_fixture() {
+        use super::LightGBMProvider;
+        use std::path::Path;
+        let fixture = Path::new("tests/fixtures/lightgbm/BTC_1step_v1_20260820.onnx");
+        if !fixture.exists() {
+            eprintln!("[skip] TP25 fixture 缺失: {fixture:?} - 脱机 PASS");
+            return;
+        }
+        let p = LightGBMProvider::from_onnx_file(fixture, 60);
+        assert_eq!(p.provider(), "lightgbm-onnx");
+        let series: Vec<f64> = (0..100).map(|t| 100.0 + (t as f64 / 5.0).sin()).collect();
+        let one = p.predict(&series, 1).expect("1-step 应成功");
+        assert_eq!(one.len(), 1);
+        assert!(one[0].is_finite(), "1-step 输出应 finite, 实测 {}", one[0]);
+        assert!(
+            (one[0] - 100.91).abs() < 1.5,
+            "RMSE < 1.5, 实测 {} (期望 ≈100.91)",
+            one[0]
+        );
+    }
+
+    #[test]
+    fn lightgbm_e2e_nstep_with_ci() {
+        use super::{lightgbm_predict_with_ci, LightGBMProvider};
+        use std::path::Path;
+        let fixture = Path::new("tests/fixtures/lightgbm/BTC_1step_v1_20260820.onnx");
+        if !fixture.exists() { return; }
+        let p = LightGBMProvider::from_onnx_file(fixture, 60);
+        assert_eq!(p.provider(), "lightgbm-onnx");
+        let series: Vec<f64> = (0..100).map(|t| 100.0 + (t as f64 / 5.0).sin()).collect();
+        let (pred, ci) = lightgbm_predict_with_ci(&series, 5).expect("N-step+CI");
+        assert_eq!(pred.len(), 5);
+        assert_eq!(ci.len(), 5);
+        for (i, v) in pred.iter().enumerate() { assert!(v.is_finite(), "step{i} 预测发散: {v}"); }
+        for (i, c) in ci.iter().enumerate() { assert!(*c > 0.0, "step{i} CI 半宽非正: {c}"); }
+        assert!(ci[4] >= ci[0], "CI 递增: h=5 ({}) >= h=1 ({})", ci[4], ci[0]);
+    }
+}
+
+
+// ============================================================
+// TP25 LightGBM Provider (tract-onnx 纯 Rust 推理, 0 系统库)
+// ============================================================
+
+pub(crate) type LightGBMSession = tract_onnx::prelude::RunnableModel<
+    tract_onnx::prelude::TypedFact,
+    Box<dyn tract_onnx::prelude::TypedOp>,
+    tract_onnx::prelude::Graph<
+        tract_onnx::prelude::TypedFact,
+        Box<dyn tract_onnx::prelude::TypedOp>,
+    >,
+>;
+
+/// LightGBM 时序预测器 (TP25 E3 增强) — tract-onnx 推理, 0 系统库 / 0 CMake / 0 MSVC.
+#[derive(Debug, Clone)]
+pub struct LightGBMProvider {
+    session: Option<Arc<LightGBMSession>>,
+    window_size: usize,
+}
+
+impl Default for LightGBMProvider {
+    fn default() -> Self {
+        Self { session: None, window_size: 60 }
+    }
+}
+
+impl LightGBMProvider {
+    pub fn is_loaded(&self) -> bool { self.session.is_some() }
+    pub fn window_size(&self) -> usize { self.window_size }
+
+    pub fn from_onnx_file(path: &std::path::Path, window_size: usize) -> Self {
+        use tract_onnx::prelude::*;
+        if !path.exists() {
+            eprintln!("[LightGBMProvider] ONNX 不存在: {path:?} -> 0 装兜底");
+            return Self::default_with_window(window_size);
+        }
+        let load_result = tract_onnx::onnx()
+            .model_for_path(path)
+            .and_then(|m| m.into_optimized())
+            .and_then(|m| m.into_runnable());
+        match load_result {
+            Ok(model) => {
+                eprintln!("[LightGBMProvider] 装载成功: {path:?}");
+                Self { session: Some(Arc::new(model)), window_size }
+            }
+            Err(e) => {
+                eprintln!("[LightGBMProvider] 装载失败: {path:?} ({e})");
+                Self::default_with_window(window_size)
+            }
+        }
+    }
+
+    fn default_with_window(window_size: usize) -> Self {
+        Self { session: None, window_size }
+    }
+
+    fn run_one_step(&self, history: &[f64]) -> Result<f64, String> {
+        use tract_onnx::prelude::*;
+        let session = self.session.as_ref().ok_or_else(|| "session 未装载".to_string())?;
+        let row: Vec<f32> = history.iter().map(|&v| v as f32).collect();
+        let input = ndarray::Array2::<f32>::from_shape_vec((1, self.window_size), row)
+            .map_err(|e| format!("ndarray 构造失败: {e}"))?;
+        let tensor: Tensor = Tensor::from_shape(
+            &[1, self.window_size],
+            &input.as_slice().unwrap(),
+        ).map_err(|e| format!("构造 Tensor 失败: {e}"))?;
+        let result = session.run(tvec![tensor.into()])
+            .map_err(|e| format!("tract run 失败: {e}"))?;
+        let out = result[0].to_array_view::<f32>()
+            .map_err(|e| format!("输出类型不匹配 f32: {e}"))?;
+        Ok(out[[0, 0]] as f64)
+    }
+}
+
+impl TimeSeriesPredictor for LightGBMProvider {
+    fn predict(&self, series: &[f64], horizon: usize) -> Result<Vec<f64>, AdapterError> {
+        let session = self.session.as_ref().ok_or_else(|| {
+            AdapterError::Degraded("LightGBM 模型未装载 (默认 Noop, .onnx 缺失或装载失败)".into())
+        })?;
+        if horizon == 0 { return Ok(Vec::new()); }
+        if series.len() < self.window_size {
+            return Err(AdapterError::Degraded(format!(
+                "LightGBM 输入序列太短 ({} < window={})", series.len(), self.window_size
+            )));
+        }
+        let mut history = series[series.len() - self.window_size..].to_vec();
+        let mut out = Vec::with_capacity(horizon);
+        for _ in 0..horizon {
+            let y = self.run_one_step(&history)
+                .map_err(|e| AdapterError::Degraded(format!("LightGBM 推理失败: {e}")))?;
+            out.push(y);
+            history.push(y);
+            if history.len() > self.window_size { history.remove(0); }
+        }
+        let _ = session;
+        Ok(out)
+    }
+
+    fn provider(&self) -> &str {
+        if self.session.is_some() { "lightgbm-onnx" } else { "lightgbm-noop" }
+    }
+}
+
+pub fn lightgbm_predict_with_ci(series: &[f64], horizon: usize)
+    -> Result<(Vec<f64>, Vec<f64>), AdapterError>
+{
+    let provider = LightGBMProvider::default();
+    let pred = provider.predict(series, horizon)?;
+    if !provider.is_loaded() {
+        return Ok((pred, vec![0.0; horizon]));
+    }
+    let last = series.last().copied().unwrap_or(0.0);
+    let prev = series.iter().rev().nth(1).copied().unwrap_or(last);
+    let trend = last - prev;
+    let residuals: Vec<f64> = pred.iter().enumerate()
+        .map(|(i, &p)| p - (last + trend * (i + 1) as f64)).collect();
+    let sigma = if residuals.len() >= 2 {
+        let mean = residuals.iter().sum::<f64>() / residuals.len() as f64;
+        let var = residuals.iter().map(|e| (e - mean).powi(2)).sum::<f64>()
+            / (residuals.len() - 1) as f64;
+        var.sqrt()
+    } else { 0.0 };
+    let ci: Vec<f64> = (1..=horizon).map(|h| 1.96 * sigma * (h as f64).sqrt()).collect();
+    Ok((pred, ci))
 }

@@ -51,6 +51,11 @@ apeireth-guard = { path = "../apeireth-guard" }
 apeireth-sovereignty = { path = "../apeireth-sovereignty" }
 apeireth-bus = { path = "../apeireth-bus" }
 
+# TP25 (E3 增强): LightGBMProvider 纯 Rust ONNX 推理 (per spec 2026-08-20)
+# 0 系统库 / 0 CMake / 0 MSVC - 替代 lightgbm-rs (C++ 编译链 Windows 0 pre-built)
+tract-onnx = "0.21"
+ndarray = "0.15"
+
 # P3#16 microsandbox 落地: Windows Job Object 加固 (exec_worker 隔离层)
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
@@ -100,3 +105,4 @@ path = "examples/r131_memory_analyze.rs"
 
 [lints]
 workspace = true
+
