@@ -360,6 +360,9 @@ mod tests {
             network: None,
             boot_timeout_secs: 60,
         });
-        assert!(result.is_err(), "默认 build start_threaded 必须 Err (0 装 stub 1:1 兼容)");
+        assert!(
+            result.is_err(),
+            "默认 build start_threaded 必须 Err (0 装 stub 1:1 兼容)"
+        );
     }
 }
