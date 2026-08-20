@@ -340,4 +340,26 @@ mod tests {
         let _: Vec<crate::vm_sandbox::VMSandboxBackend> = vm.backends();
         let _: crate::vm_sandbox::VMSandboxBackend = vm.backend();
     }
+
+    /// 2026-08-20 #5 Phase 2: start_threaded cfg-gated 行为 (主人拍板 B 路线).
+    /// 默认 build (feature 关闭) → VMSandbox trait 默认 impl 返 Err (NoopVMSandbox).
+    /// --features libkrun → 写真接 (krun_create_ctx / spawn krun_start_enter).
+    #[cfg(not(all(feature = "libkrun", any(target_os = "linux", target_os = "macos"))))]
+    #[test]
+    fn start_threaded_returns_err_in_default_build() {
+        // 0 装: 通过 default_vm_sandbox() 工厂拿 NoopVMSandbox, 它 impl VMSandbox 但
+        // VMSandbox trait 默认 impl (cfg-gated) 返 Err. 验证路径正确.
+        use crate::vm_sandbox::VMSandbox;
+        let vm = crate::vm_sandbox::default_vm_sandbox();
+        let result = vm.start_threaded(&crate::vm_sandbox::VMSandboxConfig {
+            vcpus: 1,
+            memory_mb: 256,
+            rootfs: None,
+            kernel: None,
+            initrd: None,
+            network: None,
+            boot_timeout_secs: 60,
+        });
+        assert!(result.is_err(), "默认 build start_threaded 必须 Err (0 装 stub 1:1 兼容)");
+    }
 }

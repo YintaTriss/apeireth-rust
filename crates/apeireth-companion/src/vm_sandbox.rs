@@ -301,6 +301,18 @@ pub trait VMSandbox: Send + Sync + std::fmt::Debug {
     /// 实装: 成功返 [`VMSandboxHandle`] (含 Drop 自动 halt).
     fn start(&self, config: &VMSandboxConfig) -> Result<VMSandboxHandle, String>;
 
+    /// 2026-08-20 #5 smol-vm Phase 2: 同步阻塞隔离线程启动 (主人拍板 B 路线).
+    /// 0 装期 (默认 build + Windows): trait 默认 impl 返 Err (0 装 stub 1:1 兼容).
+    /// --features libkrun + Linux/macOS: 实装 trait (libkrun / Hyperlight / Firecracker) 写真接,
+    /// std::thread::spawn 子线程调阻塞 FFI (krun_start_enter), 返 JoinHandle<ExitStatus>
+    /// 让上层在 axum/tokio runtime 里 `.await` join.
+    fn start_threaded(
+        &self,
+        _config: &VMSandboxConfig,
+    ) -> Result<std::thread::JoinHandle<std::process::ExitStatus>, String> {
+        Err("start_threaded 0 装 stub 默认 impl (实装路径 libkrun / Hyperlight / Firecracker 各自 override)".into())
+    }
+
     /// 列出已实装 backend (0 装: 空).
     fn backends(&self) -> Vec<VMSandboxBackend> {
         Vec::new()
@@ -331,6 +343,14 @@ impl VMSandbox for NoopVMSandbox {
 
     fn start(&self, _config: &VMSandboxConfig) -> Result<VMSandboxHandle, String> {
         Err("NoopVMSandbox: microVM 隔离未实装 (Stage 2 仅 trait + 0 装 stub, 真实 backend 待选型 libkrun/Hyperlight/Firecracker)".into())
+    }
+
+    /// 0 装 stub 默认 impl (NoopVMSandbox 永远返 Err 不假装已启线程隔离 VM).
+    fn start_threaded(
+        &self,
+        _config: &VMSandboxConfig,
+    ) -> Result<std::thread::JoinHandle<std::process::ExitStatus>, String> {
+        Err("NoopVMSandbox::start_threaded: 0 装 stub (本 crate 无 Libkrun 实装; 上层应用 LibkrunVMSandbox::start_threaded 拿真 handle)".into())
     }
 
     fn backends(&self) -> Vec<VMSandboxBackend> {
