@@ -125,18 +125,19 @@ impl LibkrunVMSandbox {
         {
             return false;
         }
-        // env override 优先
-        if let Ok(p) = std::env::var(LIBKRUN_LIBRARY_ENV) {
-            return std::path::Path::new(&p).exists();
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            // env override 优先
+            if let Ok(p) = std::env::var(LIBKRUN_LIBRARY_ENV) {
+                return std::path::Path::new(&p).exists();
+            }
+            // 默认路径 (per OS, 编译期 cfg 选)
+            #[cfg(target_os = "linux")]
+            let default_lib = "/usr/lib/libkrun.so.1";
+            #[cfg(target_os = "macos")]
+            let default_lib = "/usr/local/lib/libkrun.dylib";
+            std::path::Path::new(default_lib).exists()
         }
-        // 默认路径 (per OS, 编译期 cfg 选)
-        #[cfg(target_os = "linux")]
-        let default_lib = "/usr/lib/libkrun.so.1";
-        #[cfg(target_os = "macos")]
-        let default_lib = "/usr/local/lib/libkrun.dylib";
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        let default_lib = ""; // unreachable: 上面已 return false
-        std::path::Path::new(default_lib).exists()
     }
 }
 
@@ -166,7 +167,7 @@ impl crate::vm_sandbox::VMSandbox for LibkrunVMSandbox {
     /// vs Phase 1 stub 路径 (默认 build, 1:1 兼容).
     fn start(
         &self,
-        config: &crate::vm_sandbox::VMSandboxConfig,
+        _config: &crate::vm_sandbox::VMSandboxConfig,
     ) -> Result<crate::vm_sandbox::VMSandboxHandle, String> {
         // cfg-gated 真接路径 (--features libkrun + Linux/macOS 真接)
         #[cfg(all(feature = "libkrun", any(target_os = "linux", target_os = "macos")))]
@@ -211,7 +212,7 @@ fn real_start(
 
     // 2. 配置 vCPU + RAM
     let nvcpus = config.vcpus.min(32).max(1) as u8;
-    let ram_mib = config.memory_mib.max(1) as u64;
+    let ram_mib = config.memory_mb.max(1) as u64;
     let rc = unsafe { libkrun_sys::krun_set_vm_config(ctx, nvcpus, ram_mib) };
     if rc != 0 {
         unsafe { libkrun_sys::krun_free_ctx(ctx) };
@@ -301,7 +302,7 @@ mod tests {
         let s = LibkrunVMSandbox;
         let cfg = crate::vm_sandbox::VMSandboxConfig {
             vcpus: 1,
-            memory_mib: 256,
+            memory_mb: 256,
             rootfs: None,
             kernel: None,
             initrd: None,
