@@ -37,7 +37,11 @@
 //! - 不碰 R11 baseline 三值
 //! - 不假装"关系是真实的"
 
-#![deny(unsafe_code)]
+#![cfg_attr(feature = "libkrun", allow(unsafe_code))]
+// 2026-08-20 #5 smol-vm Phase 2: cfg-gated deny 放宽 — 仅 `--features libkrun` 启用时允许 unsafe.
+// 默认 build (feature 关闭) 仍严格 deny unsafe (1:1 兼容现状 / 0 装 PASS).
+// unsafe FFI 收敛在 `sandbox_ffi_libkrun.rs` 单文件 (#![allow(unsafe_code)] 内),
+// 跟 `job_object.rs:29` 同模式 (单文件 FFI 收敛).
 
 pub mod bond;
 pub mod consciousness_bridge;
@@ -45,6 +49,7 @@ pub mod consciousness_bridge;
 pub mod approval_requests;
 pub mod audit;
 mod bridge_kani_proofs; // R173 bridge 5 of 7
+pub mod capabilities_manifest; // PR #2: sanctuary front-desk 能力清单 (3 维度 supported/available/reason + current_manifest(), 0 触碰既有)
 pub mod capability;
 pub mod runtime_capabilities; // Core Capability Expansion: Runtime Capability Manifest (能力发现契约, 区别于 capability.rs 的 AI 演化提案)
 pub mod agent_trace; // Core Capability Expansion Phase 5: Agent 执行轨迹 (redaction + recorder + SSE)
@@ -129,7 +134,8 @@ pub mod value_cases; // F6: 价值内化 (案例库 + 裁决记录 + 主人反�
 pub mod voice_session; // 连续感知①: 麦克风实时语音会话桥 (STT→对话→TTS 编排, SpeechIO trait 口) // 机制件运行时聚合 (E4 好奇 + F1 情绪 + F4 假设 + TP21 目录, CompanionApp 接线层)
                        // R177: organ invariants
 mod organ_kani_proofs;
-pub mod vm_sandbox; // 2026-08-19 Stage 2 microVM 隔离 (借鉴 Firecracker minimal API + libkrun backend 抽象; 0 装 PASS trait 口, 接 libkrun/Hyperlight/Firecracker 后启用)
+pub mod sandbox_ffi_libkrun;
+pub mod vm_sandbox; // 2026-08-19 Stage 2 microVM 隔离 (借鉴 Firecracker minimal API + libkrun backend 抽象; 0 装 PASS trait 口, 接 libkrun/Hyperlight/Firecracker 后启用) // 2026-08-20 #5 smol-vm Phase 1: libkrun 真接 backend (per reports/smol-vm-implementation-spec-2026-08-20.md; 0 装 PASS probe-only stub, 借思路不接 0 star orphan)
 
 use std::sync::Arc;
 use thiserror::Error;

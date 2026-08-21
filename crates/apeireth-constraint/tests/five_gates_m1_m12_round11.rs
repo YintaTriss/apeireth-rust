@@ -353,13 +353,13 @@ fn m7_integration_snake_case_evolution_blocked_by_multi_ai() {
 // M8 = MetaQCaseBypass: 元问题大小写绕过 (V14 已修)
 // ============================================================================
 
-/// M8 unit: 顶层 verify_at_compile_time 返回 12 (12 键 hardcode 仍生效)
+/// M8 unit: 顶层 verify_at_compile_time 返回 13 (13 键 hardcode 仍生效, post commit 13c25025 PHL-07 升级)
 #[test]
 fn m8_unit_meta_q_case_bypass_blocked_by_hardcode() {
     let n = verify_at_compile_time();
     assert_eq!(
-        n, 12,
-        "M8: 12 键 hardcode 编译时断言仍生效, 大小写绕过已被 V14 修复"
+        n, 13,
+        "M8: 13 键 hardcode 编译时断言仍生效, 大小写绕过已被 V14 修复 (post PHL-07)"
     );
 }
 

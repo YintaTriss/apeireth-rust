@@ -18,8 +18,8 @@
 #![allow(missing_docs)]
 
 use apeireth_repo_tools::{
-    KEY_FILE_PATTERNS, RepoScanError, SUPPORTED_LANGUAGES, TOOL_WHITELIST, TOOL_WHITELIST_COUNT,
-    m3_defense_sanity_check, validate_external_whitelist, validate_tool_call,
+    m3_defense_sanity_check, validate_external_whitelist, validate_tool_call, RepoScanError,
+    KEY_FILE_PATTERNS, SUPPORTED_LANGUAGES, TOOL_WHITELIST, TOOL_WHITELIST_COUNT,
 };
 
 // =============================================================================
@@ -46,7 +46,10 @@ fn k1_key_file_patterns_count_is_11() {
 #[test]
 fn m3_defense_sanity_check_returns_true() {
     // K-1 编译期守门: SUPPORTED_LANGUAGES=13 + TOOL_WHITELIST=8 + KEY_FILE_PATTERNS=11
-    assert!(m3_defense_sanity_check(), "sanity check 应永远 true (K-1 编译期 hardcode)");
+    assert!(
+        m3_defense_sanity_check(),
+        "sanity check 应永远 true (K-1 编译期 hardcode)"
+    );
 }
 
 #[test]
@@ -107,7 +110,10 @@ fn validate_tool_call_rejects_empty_string() {
 #[test]
 fn validate_tool_call_ignores_args_validation() {
     // args 不会被验证 (注释 _args), 任何 JSON 都接受
-    let r = validate_tool_call("apeireth_repo_scan_scan", &serde_json::json!({"any": "thing"}));
+    let r = validate_tool_call(
+        "apeireth_repo_scan_scan",
+        &serde_json::json!({"any": "thing"}),
+    );
     assert!(r.is_ok());
     let r2 = validate_tool_call("apeireth_repo_scan_scan", &serde_json::Value::Null);
     assert!(r2.is_ok());
@@ -142,7 +148,10 @@ fn validate_external_whitelist_rejects_partial() {
 fn validate_external_whitelist_empty_is_vacuously_true() {
     // 真空 truth: 空 list iter().all() = true (无 item 可检查)
     let external: Vec<&str> = vec![];
-    assert!(validate_external_whitelist(&external), "空 list iter().all() = vacuously true");
+    assert!(
+        validate_external_whitelist(&external),
+        "空 list iter().all() = vacuously true"
+    );
 }
 
 #[test]
@@ -157,7 +166,10 @@ fn validate_external_whitelist_extra_strict() {
     // 外部白名单含 TOOL_WHITELIST + 额外允许项 → false (per .all)
     let mut external: Vec<&str> = TOOL_WHITELIST.to_vec();
     external.push("apeireth_repo_extra_allowed");
-    assert!(!validate_external_whitelist(&external), "外部多允许应 false (严格校验)");
+    assert!(
+        !validate_external_whitelist(&external),
+        "外部多允许应 false (严格校验)"
+    );
 }
 
 // =============================================================================
@@ -174,7 +186,10 @@ fn repo_scan_error_displays_8_variants_distinctly() {
         RepoScanError::EmptyPattern,
         RepoScanError::ReportFailed("template missing".into()),
         RepoScanError::CacheIo("permission denied".into()),
-        RepoScanError::CacheExpired { age_days: 60, ttl_days: 30 },
+        RepoScanError::CacheExpired {
+            age_days: 60,
+            ttl_days: 30,
+        },
     ];
     let displays: Vec<String> = variants.iter().map(|e| e.to_string()).collect();
     let unique: std::collections::HashSet<&String> = displays.iter().collect();
@@ -188,12 +203,23 @@ fn repo_scan_error_specific_messages() {
         "tool not whitelisted: dangerous"
     );
     assert_eq!(
-        RepoScanError::DepthExceeded { depth: 100, max: 10 }.to_string(),
+        RepoScanError::DepthExceeded {
+            depth: 100,
+            max: 10
+        }
+        .to_string(),
         "max scan depth exceeded: 100 > 10"
     );
-    assert_eq!(RepoScanError::EmptyPattern.to_string(), "sensitive pattern is empty");
     assert_eq!(
-        RepoScanError::CacheExpired { age_days: 90, ttl_days: 30 }.to_string(),
+        RepoScanError::EmptyPattern.to_string(),
+        "sensitive pattern is empty"
+    );
+    assert_eq!(
+        RepoScanError::CacheExpired {
+            age_days: 90,
+            ttl_days: 30
+        }
+        .to_string(),
         "cache expired (age 90 days > ttl 30)".to_string()
     );
 }

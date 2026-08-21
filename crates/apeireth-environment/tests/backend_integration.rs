@@ -32,7 +32,10 @@ fn backend_kind_as_str_6_distinct() {
 fn backend_kind_as_str_returns_lowercase() {
     for kind in BackendKind::ALL {
         let s = kind.as_str();
-        assert!(s.chars().all(|c| c.is_ascii_lowercase()), "as_str 应小写: {kind:?} -> {s}");
+        assert!(
+            s.chars().all(|c| c.is_ascii_lowercase()),
+            "as_str 应小写: {kind:?} -> {s}"
+        );
     }
 }
 
@@ -76,7 +79,9 @@ fn backend_kind_is_remote() {
 fn backend_kind_classification_6() {
     // 互斥且穷尽: 6 backend 各属一个类别
     for kind in BackendKind::ALL {
-        let count = (kind.is_local() as u32) + (kind.is_container() as u32) + (kind.is_remote() as u32);
+        let count = u32::from(kind.is_local())
+            + u32::from(kind.is_container())
+            + u32::from(kind.is_remote());
         assert_eq!(count, 1, "每个 kind 恰属 1 类别: {kind:?}");
     }
 }
@@ -103,9 +108,11 @@ fn exec_request_with_cwd() {
 
 #[test]
 fn exec_request_with_env_single_pair() {
-    let r = apeireth_environment::ExecRequest::new("env")
-        .with_env("FAKE_KEY", "FAKE_VALUE");
-    assert_eq!(r.env, vec![("FAKE_KEY".to_string(), "FAKE_VALUE".to_string())]);
+    let r = apeireth_environment::ExecRequest::new("env").with_env("FAKE_KEY", "FAKE_VALUE");
+    assert_eq!(
+        r.env,
+        vec![("FAKE_KEY".to_string(), "FAKE_VALUE".to_string())]
+    );
 }
 
 #[test]
@@ -155,7 +162,10 @@ fn docker_config_new_uses_sensible_defaults() {
 fn docker_config_with_volume() {
     let c = DockerConfig::new("ubuntu:22.04").with_volume("/host/data", "/data");
     assert_eq!(c.volumes.len(), 1);
-    assert_eq!(c.volumes[0], ("/host/data".to_string(), "/data".to_string()));
+    assert_eq!(
+        c.volumes[0],
+        ("/host/data".to_string(), "/data".to_string())
+    );
 }
 
 #[test]
@@ -262,8 +272,7 @@ fn backend_registry_with_local_has_local() {
 
 #[test]
 fn backend_registry_register_returns_self() {
-    let r = BackendRegistry::new()
-        .register(Box::new(apeireth_environment::LocalBackend));
+    let r = BackendRegistry::new().register(Box::new(apeireth_environment::LocalBackend));
     assert_eq!(r.kinds().len(), 1);
 }
 
@@ -271,7 +280,9 @@ fn backend_registry_register_returns_self() {
 fn backend_registry_register_multiple_backends() {
     let r = BackendRegistry::new()
         .register(Box::new(apeireth_environment::LocalBackend))
-        .register(Box::new(DockerBackend::new(DockerConfig::new("ubuntu:22.04"))));
+        .register(Box::new(DockerBackend::new(DockerConfig::new(
+            "ubuntu:22.04",
+        ))));
     assert_eq!(r.kinds().len(), 2);
     assert!(r.get(BackendKind::Local).is_some());
     assert!(r.get(BackendKind::Docker).is_some());
@@ -306,7 +317,7 @@ fn backend_registry_register_replaces() {
     assert_eq!(r.kinds().len(), 2);
     let docker = r.get(BackendKind::Docker).unwrap();
     assert_eq!(docker.name(), "docker"); // 后端 name
-    // Docker 覆盖后, 第二次 register 的 config 不易直接测 (无 getter), 仅 kinds 数
+                                         // Docker 覆盖后, 第二次 register 的 config 不易直接测 (无 getter), 仅 kinds 数
 }
 
 #[test]
@@ -351,8 +362,12 @@ fn env_error_displays_distinctly() {
 #[test]
 fn env_error_specific_messages() {
     assert!(EnvironmentError::Timeout(30).to_string().contains("30"));
-    assert!(EnvironmentError::LocalFailed("disk full".into()).to_string().contains("disk full"));
-    assert!(EnvironmentError::DockerUnavailable("no docker".into()).to_string().contains("no docker"));
+    assert!(EnvironmentError::LocalFailed("disk full".into())
+        .to_string()
+        .contains("disk full"));
+    assert!(EnvironmentError::DockerUnavailable("no docker".into())
+        .to_string()
+        .contains("no docker"));
 }
 
 // =============================================================================
@@ -380,7 +395,11 @@ async fn local_backend_executes_echo() {
     } else {
         // Unix 严格 check stdout
         assert_eq!(r.exit_code, 0);
-        assert!(r.stdout.contains("hello-apeireth"), "应含 stdout: {:?}", r.stdout);
+        assert!(
+            r.stdout.contains("hello-apeireth"),
+            "应含 stdout: {:?}",
+            r.stdout
+        );
     }
     assert_eq!(r.backend, "local");
 }
@@ -388,8 +407,8 @@ async fn local_backend_executes_echo() {
 #[tokio::test]
 async fn local_backend_executes_invalid_command() {
     let backend = apeireth_environment::LocalBackend;
-    let req = apeireth_environment::ExecRequest::new("definitely-not-a-real-command-xyz")
-        .with_timeout(5);
+    let req =
+        apeireth_environment::ExecRequest::new("definitely-not-a-real-command-xyz").with_timeout(5);
     let result = backend.execute(&req).await;
     assert!(result.is_err(), "无效命令应返 Err");
 }
@@ -412,7 +431,10 @@ async fn daytona_backend_execute_returns_unconfigured_error() {
     });
     let req = apeireth_environment::ExecRequest::new("echo hi");
     let result = backend.execute(&req).await;
-    assert!(matches!(result, Err(EnvironmentError::DaytonaUnconfigured(_))));
+    assert!(matches!(
+        result,
+        Err(EnvironmentError::DaytonaUnconfigured(_))
+    ));
 }
 
 #[tokio::test]
@@ -432,7 +454,10 @@ async fn modal_backend_execute_returns_unconfigured_error() {
     });
     let req = apeireth_environment::ExecRequest::new("echo hi");
     let result = backend.execute(&req).await;
-    assert!(matches!(result, Err(EnvironmentError::ModalUnconfigured(_))));
+    assert!(matches!(
+        result,
+        Err(EnvironmentError::ModalUnconfigured(_))
+    ));
 }
 
 #[tokio::test]

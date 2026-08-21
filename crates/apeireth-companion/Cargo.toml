@@ -51,6 +51,26 @@ apeireth-guard = { path = "../apeireth-guard" }
 apeireth-sovereignty = { path = "../apeireth-sovereignty" }
 apeireth-bus = { path = "../apeireth-bus" }
 
+# TP25 (E3 增强): LightGBMProvider 纯 Rust ONNX 推理 (per spec 2026-08-20)
+# 0 系统库 / 0 CMake / 0 MSVC - 替代 lightgbm-rs (C++ 编译链 Windows 0 pre-built)
+tract-onnx = "0.21"
+ndarray = "0.15"
+
+# 2026-08-20 #5 smol-vm / libkrun 真接 (per reports/smol-vm-implementation-spec-2026-08-20.md):
+# Phase 1 (commit 176a4003 + 949f2d2c) 纯 0 装 stub + 工厂 3 段 cfg 守门, feature 关闭.
+# Phase 2 (本 commit) --features libkrun 启用真接 FFI:
+#   - libkrun-sys = "0.9.7" optional dep (Red Hat 维护 KVM/HVF microVM 库 Rust binding, bindgen 0.71)
+#   - lib.rs #![deny(unsafe_code)] -> #![cfg_attr(feature = "libkrun", allow(unsafe_code))] (cfg-gated)
+#   - unsafe FFI 收敛在 sandbox_ffi_libkrun.rs 单文件 (#![allow(unsafe_code)] 内, 跟 job_object.rs:29 同模式)
+# 主人决策 (2026-08-20): 全最强路线 — deny cfg-gated 放宽 + 真接 FFI + CI matrix.
+# 默认 build (feature 关闭) = 0 装 PASS 1:1 兼容现状.
+[features]
+default = []
+libkrun = ["dep:libkrun-sys"]
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+libkrun-sys = { version = "0.9.7", optional = true }
+
 # P3#16 microsandbox 落地: Windows Job Object 加固 (exec_worker 隔离层)
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
@@ -100,3 +120,4 @@ path = "examples/r131_memory_analyze.rs"
 
 [lints]
 workspace = true
+

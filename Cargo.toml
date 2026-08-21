@@ -410,8 +410,8 @@ unused_extern_crates = 'warn'
 trivial_numeric_casts = 'warn'
 unstable_features = 'warn'
 unused_import_braces = 'warn'
-unused-lifetimes = 'warn'
-unused-macro-rules = 'warn'
+unused_lifetimes = 'warn'
+unused_macro_rules = 'warn'
 
 # === R19 T10: rustc lints (不在 clippy 域) ===
 # 9 个 missing_docs + 1 个 unused_imports + 1 个 dead_code + 1 个 unused_must_use + 1 个 unused_mut

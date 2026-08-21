@@ -501,7 +501,7 @@ fn catalog_trait_new_spec_methods() {
 
 fn write_csv(content: &str) -> tempfile::NamedTempFile {
     let f = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(f.path(), content).unwrap();
+    fs_err::write(f.path(), content).unwrap();
     f
 }
 

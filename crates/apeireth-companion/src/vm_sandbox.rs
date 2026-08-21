@@ -301,6 +301,18 @@ pub trait VMSandbox: Send + Sync + std::fmt::Debug {
     /// 实装: 成功返 [`VMSandboxHandle`] (含 Drop 自动 halt).
     fn start(&self, config: &VMSandboxConfig) -> Result<VMSandboxHandle, String>;
 
+    /// 2026-08-20 #5 smol-vm Phase 2: 同步阻塞隔离线程启动 (主人拍板 B 路线).
+    /// 0 装期 (默认 build + Windows): trait 默认 impl 返 Err (0 装 stub 1:1 兼容).
+    /// --features libkrun + Linux/macOS: 实装 trait (libkrun / Hyperlight / Firecracker) 写真接,
+    /// std::thread::spawn 子线程调阻塞 FFI (krun_start_enter), 返 JoinHandle<ExitStatus>
+    /// 让上层在 axum/tokio runtime 里 `.await` join.
+    fn start_threaded(
+        &self,
+        _config: &VMSandboxConfig,
+    ) -> Result<std::thread::JoinHandle<std::process::ExitStatus>, String> {
+        Err("start_threaded 0 装 stub 默认 impl (实装路径 libkrun / Hyperlight / Firecracker 各自 override)".into())
+    }
+
     /// 列出已实装 backend (0 装: 空).
     fn backends(&self) -> Vec<VMSandboxBackend> {
         Vec::new()
@@ -333,6 +345,14 @@ impl VMSandbox for NoopVMSandbox {
         Err("NoopVMSandbox: microVM 隔离未实装 (Stage 2 仅 trait + 0 装 stub, 真实 backend 待选型 libkrun/Hyperlight/Firecracker)".into())
     }
 
+    /// 0 装 stub 默认 impl (NoopVMSandbox 永远返 Err 不假装已启线程隔离 VM).
+    fn start_threaded(
+        &self,
+        _config: &VMSandboxConfig,
+    ) -> Result<std::thread::JoinHandle<std::process::ExitStatus>, String> {
+        Err("NoopVMSandbox::start_threaded: 0 装 stub (本 crate 无 Libkrun 实装; 上层应用 LibkrunVMSandbox::start_threaded 拿真 handle)".into())
+    }
+
     fn backends(&self) -> Vec<VMSandboxBackend> {
         // 0 装: 无 backend, 严守 0 装 PASS.
         Vec::new()
@@ -353,8 +373,33 @@ impl VMSandbox for NoopVMSandbox {
 ///
 /// **当前状态**: 仅返 Noop (Stage 2 trait 口预留, 实装待下一轮).
 pub fn default_vm_sandbox() -> Box<dyn VMSandbox> {
-    // 平台检测占位 — 实装时按 `#[cfg(target_os = "linux")]` / `"macos"` / `"windows"` 分支.
-    // 当前一律返 Noop, 严守 0 装 PASS 红线.
+    // 2026-08-20 #5 smol-vm Phase 1 工厂 3 段 cfg 守门 (per spec §6.4.9):
+    // - Linux + `feature = "libkrun"` + probe 命中 → LibkrunVMSandbox
+    // - macOS + `feature = "libkrun"` + probe 命中 → LibkrunVMSandbox (HVF 后端)
+    // - 其它 / feature 关闭 / probe 失败 → NoopVMSandbox (0 装 1:1 兼容)
+    //
+    // 当前 Phase 1: `feature = "libkrun"` 关闭, LibkrunVMSandbox::start() 永远 Err
+    // (probe-only stub), 所以 `default_vm_sandbox()` 实际仍返 NoopVMSandbox — 0 装 1:1 行为.
+    // Phase 2 真接 FFI 时, --features libkrun + LibkrunVMSandbox::start 真 Ok 才会触发真 VM spawn.
+    #[cfg(all(target_os = "linux", feature = "libkrun"))]
+    {
+        use crate::sandbox_ffi_libkrun::LibkrunVMSandbox;
+        let backend = LibkrunVMSandbox;
+        if backend.available() {
+            return Box::new(backend);
+        }
+        eprintln!("[default_vm_sandbox] Linux + libkrun feature 但 probe 失败 (KVM 不可用 / libkrun.so 未装), 落 Noop 兜底 (per spec §6.4.9)");
+    }
+    #[cfg(all(target_os = "macos", feature = "libkrun"))]
+    {
+        use crate::sandbox_ffi_libkrun::LibkrunVMSandbox;
+        let backend = LibkrunVMSandbox;
+        if backend.available() {
+            return Box::new(backend);
+        }
+        eprintln!("[default_vm_sandbox] macOS + libkrun feature 但 probe 失败 (HVF 不可用 / libkrun.dylib 未装), 落 Noop 兜底 (per spec §6.4.9)");
+    }
+    // 其它一切情况 (Windows / 0 装 / feature 关闭 / probe 失败) → NoopVMSandbox
     Box::new(NoopVMSandbox)
 }
 

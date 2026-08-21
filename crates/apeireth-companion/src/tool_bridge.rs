@@ -1769,7 +1769,8 @@ mod tests {
         // 0 装 PASS: 挂 HardenedSandbox (默认双 Noop) 时, 桥级链不 panic
         use crate::sandbox_integration::HardenedSandbox;
         let store = Arc::new(SqliteMemoryStore::open_in_memory().unwrap());
-        let bridge = ToolBridge::new(store).with_hardened_sandbox(Arc::new(HardenedSandbox::default()));
+        let bridge =
+            ToolBridge::new(store).with_hardened_sandbox(Arc::new(HardenedSandbox::default()));
         // 验证桥级创建后仍可访问 sandbox_config (与 hardened 平行)
         assert_eq!(bridge.sandbox_config().timeout_secs, 30);
     }

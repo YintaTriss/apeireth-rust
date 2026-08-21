@@ -30,7 +30,7 @@ use apeireth_core::{
 // deep_impl 内部类型仅本地使用, 不需要序列化.
 
 // ============================================
-// 1. 12 键 verdict cache O(1) — 定长数组索引
+// 1. 13 键 verdict cache O(1) — 定长数组索引
 // ============================================
 
 /// 13 键 verdict cache (定长数组, O(1) 查询).
@@ -40,7 +40,7 @@ use apeireth_core::{
 /// - `TwelveKeyVerdictCache`: `[Option<PhilosophyVerdict>; 13]` — 按 13 键在
 ///   `ALL_TWELVE_KEYS` 中的位置索引, 真正 O(1), 零 hash, 编译期常量大小
 ///
-/// **索引语义**: `cache[key_index(k)]` = 该键当前的 verdict (`key_index` = 0..12).
+/// **索引语义**: `cache[key_index(k)]` = 该键当前的 verdict (`key_index` = 0..13).
 ///
 /// ponytail: 13 键 hardcode 锁定的 trait 已经在 `apeireth_core::PhilosophyKey` 实现,
 /// 不能再用 `group_id()` 索引 (返回 1-6, 多个键共享同一 group_id 会互相覆盖).
@@ -48,19 +48,21 @@ use apeireth_core::{
 #[derive(Debug, Default, Clone)]
 pub struct TwelveKeyVerdictCache {
     /// 13 元素定长数组 — 索引 i = 第 i 个 PhilosophyKey 的 verdict
-    slots: [Option<PhilosophyVerdict>; 12],
+    /// 2026-08-20: 13 槽 (= 13 键) — post commit 13c25025 PHL-07 第 13 键升级,
+    /// SLOT_COUNT 从 12 升 13. 历史 12 是 v3 9 + v4.1 3 = 12 时代, PHL-07 加后变 13.
+    slots: [Option<PhilosophyVerdict>; 13],
 }
 
 impl TwelveKeyVerdictCache {
-    /// 编译时常量: 12 槽 hardcode (= `apeireth_core::ALL_TWELVE_KEYS.len()`).
+    /// 编译时常量: 13 槽 hardcode (= `apeireth_core::ALL_TWELVE_KEYS.len()`).
     ///
-    /// 任何调用方在编译期就能验证 cache 大小 = 12, 不允许悄悄改成 11/13.
-    pub const SLOT_COUNT: usize = 12;
+    /// 任何调用方在编译期就能验证 cache 大小 = 13, 不允许悄悄改成 12/14.
+    pub const SLOT_COUNT: usize = 13;
 
     /// 12 槽全 None — 用于 `new()` / `clear_all()`, 集中硬编码避免散落.
-    fn empty_slots() -> [Option<PhilosophyVerdict>; 12] {
+    fn empty_slots() -> [Option<PhilosophyVerdict>; 13] {
         [
-            None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None, None,
         ]
     }
 
@@ -73,10 +75,10 @@ impl TwelveKeyVerdictCache {
         apeireth_core::ALL_TWELVE_KEYS
             .iter()
             .position(|k| k == key)
-            .expect("12 键清单必须包含每个 PhilosophyKey (LOCKED)")
+            .expect("13 键清单必须包含每个 PhilosophyKey (LOCKED)")
     }
 
-    /// 创建空 cache (12 槽全 None).
+    /// 创建空 cache (13 槽全 None).
     pub fn new() -> Self {
         Self {
             slots: Self::empty_slots(),
@@ -103,17 +105,17 @@ impl TwelveKeyVerdictCache {
         self.slots[Self::slot_index(key)] = None;
     }
 
-    /// 清空全部 12 槽.
+    /// 清空全部 13 槽.
     pub fn clear_all(&mut self) {
         self.slots = Self::empty_slots();
     }
 
-    /// 12 槽中已填充的槽位数 (运行期观察).
+    /// 13 槽中已填充的槽位数 (运行期观察).
     pub fn filled_count(&self) -> usize {
         self.slots.iter().filter(|s| s.is_some()).count()
     }
 
-    /// 12 槽中全部 Allow 的槽位数 (V1 通过的测度).
+    /// 13 槽中全部 Allow 的槽位数 (V1 通过的测度).
     pub fn allow_count(&self) -> usize {
         self.slots
             .iter()
@@ -121,7 +123,7 @@ impl TwelveKeyVerdictCache {
             .count()
     }
 
-    /// 12 槽中 Block 的槽位数 (V1 拒绝的测度).
+    /// 13 槽中 Block 的槽位数 (V1 拒绝的测度).
     pub fn block_count(&self) -> usize {
         self.slots
             .iter()
@@ -130,20 +132,20 @@ impl TwelveKeyVerdictCache {
     }
 
     /// O(1) 访问内部数组 — 暴露给深度测试, 但不允许外部 mutation.
-    pub fn slots(&self) -> &[Option<PhilosophyVerdict>; 12] {
+    pub fn slots(&self) -> &[Option<PhilosophyVerdict>; 13] {
         &self.slots
     }
 }
 
-/// 编译期 hardcode 断言 — `TwelveKeyVerdictCache::SLOT_COUNT == 12` (13 键 lineage 升级后保持硬编码 12 槽, 等待 apeireth-core 升级到 13 槽).
+/// 编译期 hardcode 断言 — `TwelveKeyVerdictCache::SLOT_COUNT == 13` (13 键 lineage PHL-07 升级后保持硬编码 13 槽, 跟 apeireth-core 同步).
 ///
 /// 任何修改 SLOT_COUNT 常量 / 13 键清单的行为都会触发此断言在调用方失败.
 pub const TWELVE_KEY_VERDICT_CACHE_HARDCODE: usize = {
     // 触发 apeireth-core 内部硬断言
     let _ = apeireth_core::TWELVE_KEYS_HARDCODE;
     assert!(
-        TwelveKeyVerdictCache::SLOT_COUNT == 12,
-        "12 键 verdict cache SLOT_COUNT 必须 = 12"
+        TwelveKeyVerdictCache::SLOT_COUNT == 13,
+        "13 键 verdict cache SLOT_COUNT 必须 = 13 (post PHL-07)"
     );
     TwelveKeyVerdictCache::SLOT_COUNT
 };
@@ -543,7 +545,7 @@ impl ConstraintEngineDeep {
         Self::default()
     }
 
-    /// 编译期 hardcode 触发 — 13 键 cache SLOT_COUNT (历史 12 槽, 等待 apeireth-core 升级) + Council 7 advisor COUNT.
+    /// 编译期 hardcode 触发 — 13 键 cache SLOT_COUNT + Council 7 advisor COUNT.
     pub fn verify_at_compile_time() -> (usize, usize) {
         let _ = TWELVE_KEY_VERDICT_CACHE_HARDCODE;
         let _ = SEVEN_ADVISORS_HARDCODE;
@@ -677,12 +679,12 @@ mod deep_impl_tests {
         }
     }
 
-    // ---- 12 键 verdict cache O(1) ----
+    // ---- 13 键 verdict cache O(1) ----
 
     #[test]
-    fn deep_twelve_key_cache_slot_count_is_12() {
-        assert_eq!(TwelveKeyVerdictCache::SLOT_COUNT, 12);
-        assert_eq!(TwelveKeyVerdictCache::new().slots().len(), 12);
+    fn deep_twelve_key_cache_slot_count_is_13() {
+        assert_eq!(TwelveKeyVerdictCache::SLOT_COUNT, 13);
+        assert_eq!(TwelveKeyVerdictCache::new().slots().len(), 13);
     }
 
     #[test]
@@ -697,8 +699,8 @@ mod deep_impl_tests {
             );
             assert!(matches!(cache.get(k), Some(PhilosophyVerdict::Allow)));
         }
-        assert_eq!(cache.filled_count(), 12);
-        assert_eq!(cache.allow_count(), 12);
+        assert_eq!(cache.filled_count(), 13);
+        assert_eq!(cache.allow_count(), 13);
         assert_eq!(cache.block_count(), 0);
     }
 
@@ -721,9 +723,9 @@ mod deep_impl_tests {
         for k in apeireth_core::ALL_TWELVE_KEYS.iter() {
             cache.put(k, PhilosophyVerdict::Allow);
         }
-        assert_eq!(cache.filled_count(), 12);
+        assert_eq!(cache.filled_count(), 13);
         cache.clear_slot(&apeireth_core::ALL_TWELVE_KEYS[0]);
-        assert_eq!(cache.filled_count(), 11);
+        assert_eq!(cache.filled_count(), 12);
         cache.clear_all();
         assert_eq!(cache.filled_count(), 0);
     }
@@ -738,8 +740,9 @@ mod deep_impl_tests {
                 cache.put(k, PhilosophyVerdict::Allow);
             }
         }
+        // 13 键 (V3 9 + v4.1 3 + PHL-07 1): 前 3 Block, 后 10 Allow
         assert_eq!(cache.block_count(), 3);
-        assert_eq!(cache.allow_count(), 9);
+        assert_eq!(cache.allow_count(), 10);
     }
 
     #[test]
@@ -752,20 +755,20 @@ mod deep_impl_tests {
 
     #[test]
     fn deep_twelve_key_cache_hardcode_const() {
-        // 编译期 hardcode: SLOT_COUNT = 12
-        assert_eq!(TWELVE_KEY_VERDICT_CACHE_HARDCODE, 12);
+        // 编译期 hardcode: SLOT_COUNT = 13
+        assert_eq!(TWELVE_KEY_VERDICT_CACHE_HARDCODE, 13);
     }
 
     #[test]
     fn deep_twelve_key_cache_keys_have_distinct_slots() {
-        // 负向: 12 键各自独立槽位 (group_id 共享不会覆盖)
+        // 负向: 13 键各自独立槽位 (group_id 共享不会覆盖)
         let mut cache = TwelveKeyVerdictCache::new();
         for k in apeireth_core::ALL_TWELVE_KEYS.iter() {
             cache.put(k, PhilosophyVerdict::Block(PhilosophyKey::NotSafe));
         }
-        assert_eq!(cache.filled_count(), 12, "12 键各自独立槽位");
+        assert_eq!(cache.filled_count(), 13, "13 键各自独立槽位");
         assert_eq!(cache.allow_count(), 0);
-        assert_eq!(cache.block_count(), 12);
+        assert_eq!(cache.block_count(), 13);
     }
 
     // ---- Council 7 advisor real depth ----
@@ -970,7 +973,7 @@ mod deep_impl_tests {
     #[test]
     fn deep_engine_verify_at_compile_time() {
         let (slots, advisors) = ConstraintEngineDeep::verify_at_compile_time();
-        assert_eq!(slots, 12);
+        assert_eq!(slots, 13);
         assert_eq!(advisors, 7);
     }
 
@@ -978,7 +981,7 @@ mod deep_impl_tests {
     fn deep_engine_mark_all_allow() {
         let mut engine = ConstraintEngineDeep::new();
         engine.mark_all_allow();
-        assert_eq!(engine.twelve_key_filled_count(), 12);
+        assert_eq!(engine.twelve_key_filled_count(), 13);
         assert_eq!(engine.council_pass_count(), 7);
     }
 

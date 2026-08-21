@@ -38,6 +38,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # l3_real_socket_smoke.rs 测试 spawn companion_serve binary, tarpaulin 不 build example
+      # (per 8 哲学锚 S-2 实事求是: 0 装 PASS 严守, test infrastructure 1:1 兼容)
+      - name: Build companion_serve example (tarpaulin 依赖)
+        run: cargo build -p apeireth-companion --example companion_serve
+
       - name: cargo tarpaulin
         # CI fix 2026-08: workspace 全量 (86 crates) 在 ubuntu-latest 上 broken pipe (os error 32),
         # 收敛到 3 个核心 crate (companion/memory/api) — 覆盖率门禁的机制件代表

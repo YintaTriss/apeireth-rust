@@ -345,9 +345,8 @@ impl StreamingChat {
             _ => return Ok(events),
         };
 
-        let delta = match choice.get("delta") {
-            Some(d) => d,
-            None => return Ok(events),
+        let Some(delta) = choice.get("delta") else {
+            return Ok(events);
         };
 
         // 处理 `delta.content` (跨 chunk 切 CoT).
@@ -408,8 +407,8 @@ impl StreamingChat {
 
         let mut events = Vec::new();
         // 尝试解析为 JSON Value; 失败 → 包装成字符串 Value (0 假装: 不丢工具输出).
-        let output: Value = serde_json::from_str(result)
-            .unwrap_or_else(|_| Value::String(result.to_string()));
+        let output: Value =
+            serde_json::from_str(result).unwrap_or_else(|_| Value::String(result.to_string()));
 
         events.push(SseEvent::ToolResult {
             tool_call_id: tool_call_id.to_string(),
@@ -448,11 +447,7 @@ impl StreamingChat {
     /// - `InText` 模式: 字符直接当 ContentDelta emit (单字符 emit, 与 chunk 边界天然兼容).
     ///
     /// 返回: 实际 emit 的事件数 (供测试断言).
-    fn feed_content(
-        &mut self,
-        raw: &str,
-        events: &mut Vec<SseEvent>,
-    ) -> Result<usize, String> {
+    fn feed_content(&mut self, raw: &str, events: &mut Vec<SseEvent>) -> Result<usize, String> {
         if raw.is_empty() {
             return Ok(0);
         }
@@ -615,7 +610,11 @@ impl StreamingChat {
             {
                 if !name.is_empty() {
                     // 确保 entry["function"] 是 Object.
-                    if !entry.get("function").map(|v| v.is_object()).unwrap_or(false) {
+                    if !entry
+                        .get("function")
+                        .map(|v| v.is_object())
+                        .unwrap_or(false)
+                    {
                         entry["function"] = json!({});
                     }
                     entry["function"]["name"] = Value::String(name.to_string());
@@ -635,7 +634,11 @@ impl StreamingChat {
                     .unwrap_or("")
                     .to_string();
                 let merged = format!("{}{}", current, args_str);
-                if !entry.get("function").map(|v| v.is_object()).unwrap_or(false) {
+                if !entry
+                    .get("function")
+                    .map(|v| v.is_object())
+                    .unwrap_or(false)
+                {
                     entry["function"] = json!({});
                 }
                 entry["function"]["arguments"] = Value::String(merged);
@@ -655,7 +658,7 @@ impl StreamingChat {
     // ============================================================
 
     /// emit ToolCall 事件 (每条 tool_call 一条事件), 并返回.
-    fn emit_tool_calls(&mut self) -> Vec<SseEvent> {
+    fn emit_tool_calls(&self) -> Vec<SseEvent> {
         let mut out = Vec::with_capacity(self.tool_calls_acc.len());
         for tc in &self.tool_calls_acc {
             let id = tc
@@ -970,9 +973,7 @@ mod tests {
         assert!(events.is_empty(), "空对象返空事件");
 
         // case B: choices 空数组
-        let events = chat
-            .feed_chunk(&json!({"choices": []}))
-            .unwrap();
+        let events = chat.feed_chunk(&json!({"choices": []})).unwrap();
         assert!(events.is_empty(), "空 choices 数组返空事件");
 
         // case C: choices 存在但无 delta
@@ -1075,9 +1076,7 @@ mod tests {
         let mut chat = StreamingChat::new();
         assert_eq!(chat.state, StreamingChatState::Init);
 
-        let events = chat
-            .feed_tool_result("call_xxx", "result")
-            .unwrap();
+        let events = chat.feed_tool_result("call_xxx", "result").unwrap();
         assert!(events.is_empty(), "Init 态不接受 tool_result");
     }
 

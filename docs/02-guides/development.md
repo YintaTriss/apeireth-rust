@@ -66,6 +66,26 @@ git push origin master
 **真实案例**: 2026-08-19 PR #83 commit `a77f16f` 没 fmt, CI rustfmt.yml fail。
 修: `cargo fmt --package apeireth-guard` → commit `95c358af` → push → CI 必绿。
 
+## 守门 1 宽限规则 (post-1.0.0, commit 8551e912)
+
+**背景**: 主人 R148 (2026-08-13) 拍板 24 LOCKED crate 入口签名冻结 = **0 约束力**, 24 LOCKED 降级为历史记录。后续 PHL-07 (13 键 verdict cache) 升级, 多个 commit 触碰 LOCKED crate 文件 (13c25025, 894dd260) 但纯 logic 守门, fmt 漂移导致 CI 误报。
+
+**修法** (8 哲学锚 S-2 实事求是 + O-5 不假装):
+- 守门 1 (24 LOCKED crate 不触碰) 改用 `git diff -w --ignore-blank-lines --ignore-cr-at-eol` 检测
+- **如果 -w 0 diff = pure fmt, 放行**
+- **如果 -w 有 diff = 真的 logic 改, 继续 fail**
+
+**意味着**:
+- 改 24 LOCKED crate 的 fmt drift (`cargo fmt --package`) → CI pass
+- 改 24 LOCKED crate 的 logic (`pub fn`, `enum`, `const`, 3 不可变脊柱) → CI fail
+- 工程规范 (S-3 质量工程化): `cargo fmt` 守门保留, fmt 漂移仍 fail, 0 降级
+
+**相关 commit**:
+- `f7c67ac4` PII exclude fix (守门 #5)
+- `5e55f729` fmt fix 8 个非 LOCKED
+- `c8bfe11b` → `8541e912` LOCKED fmt fix 撤回 + 选项 trace
+- `8551e912` 守门 1 宽限 (本 commit, 选项 A)
+
 ## 前端开发 (companion-desktop, post-1.0.0 新增)
 
 `frontend/companion-desktop/` 是**独立 [workspace]** (Svelte 5 + Tauri 2), 不在 root cargo workspace.

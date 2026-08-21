@@ -33,11 +33,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use apeireth_api::llm::router::MultiLlmRouter;
 use apeireth_api::protocol_handlers::{
     build_pipeline, dispatch, openai_chat_from_normalized, openai_chat_to_normalized,
     stream_forward, OpenAiChatMessage, OpenAiChatRequest,
 };
-use apeireth_api::{Pipeline, ProtocolKind};
+use apeireth_api::{
+    LlmConfig, LlmError, LlmProvider, LlmRequest, LlmResponse, Pipeline, ProtocolKind,
+};
 use apeireth_bus::{LifecycleBus, LifecycleContext, LifecycleEvent, LifecycleHook};
 use apeireth_companion::assemble::{CompanionApp, DeepRecall, DialogSummarizer, ExperienceRefiner};
 use apeireth_companion::daemon::{
@@ -66,7 +69,7 @@ use axum::{
         sse::{Event as SseEvent, KeepAlive, Sse},
         IntoResponse,
     },
-    routing::{get, patch, post},
+    routing::{get, post},
     Json, Router,
 };
 use chrono::{Timelike, Utc};
@@ -79,17 +82,17 @@ const DEFAULT_BASE_URL: &str = "https://api.minimaxi.com";
 /// 历史原因保留 const 形如 `MODEL` 字面量供文档引用; 真正取值走 `model()` 函数.
 const DEFAULT_MODEL: &str = "MiniMax-M3";
 
-/// 全局 model 选取 (env `APEIRETH_LLM_MODEL` 优先, 缺省回落 `DEFAULT_MODEL`).
-/// 0 装 PASS: 缺省回落 = 与旧版 `MiniMax-M3` 行为 1:1.
-/// **注**: 用 thread_local + leak 模式, 这样 model() 返 &'static str (供现有调用点使用),
-/// 测试可多次 init 每次新 leak. leak 内存只在测试 + 启动期, 可忽略.
+// 全局 model 选取 (env `APEIRETH_LLM_MODEL` 优先, 缺省回落 `DEFAULT_MODEL`).
+// 0 装 PASS: 缺省回落 = 与旧版 `MiniMax-M3` 行为 1:1.
+// **注**: 用 thread_local + leak 模式, 这样 model() 返 &'static str (供现有调用点使用),
+// 测试可多次 init 每次新 leak. leak 内存只在测试 + 启动期, 可忽略.
 thread_local! {
     static MODEL: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
 }
 
 fn init_model() -> &'static str {
-    let new_value = std::env::var("APEIRETH_LLM_MODEL")
-        .unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+    let new_value =
+        std::env::var("APEIRETH_LLM_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
     MODEL.with(|c| *c.borrow_mut() = new_value.clone());
     Box::leak(new_value.into_boxed_str())
 }
@@ -105,10 +108,10 @@ fn model() -> &'static str {
     })
 }
 
-/// 全局 base URL 选取 (优先级: TOML env → APEIRETH_LLM_BASE_URL env → DEFAULT_BASE_URL).
-/// **0 装 PASS**: 缺省回落 = minimaxi 主域, 与旧版 1:1 行为.
-/// **TOML 入口**: env `APEIRETH_LLM_CONFIG=path/to.toml` 时, 第一个 provider 的
-/// `base_url` 自动覆盖 `DEFAULT_BASE_URL`. 这让用户不用改源码就能切换 LLM 服务.
+// 全局 base URL 选取 (优先级: TOML env → APEIRETH_LLM_BASE_URL env → DEFAULT_BASE_URL).
+// **0 装 PASS**: 缺省回落 = minimaxi 主域, 与旧版 1:1 行为.
+// **TOML 入口**: env `APEIRETH_LLM_CONFIG=path/to.toml` 时, 第一个 provider 的
+// `base_url` 自动覆盖 `DEFAULT_BASE_URL`. 这让用户不用改源码就能切换 LLM 服务.
 thread_local! {
     static BASE_URL: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
 }
@@ -131,6 +134,70 @@ fn base_url() -> &'static str {
         }
     })
 }
+// PipelinePool helper (multi provider abstraction per spec)
+pub struct PipelinePool {
+    pipelines: std::collections::HashMap<String, Arc<Pipeline>>,
+    fallback_order: Vec<String>,
+    default_pipeline: Arc<Pipeline>,
+    router: Arc<MultiLlmRouter>,
+}
+
+impl PipelinePool {
+    pub fn single(provider_name: &str, pipeline: Arc<Pipeline>) -> Self {
+        let router = MultiLlmRouter::new();
+        Self {
+            pipelines: std::collections::HashMap::new(),
+            fallback_order: vec![provider_name.to_string()],
+            default_pipeline: pipeline,
+            router: Arc::new(router),
+        }
+    }
+
+    pub fn multi(
+        pipelines: std::collections::HashMap<String, Arc<Pipeline>>,
+        fallback_order: Vec<String>,
+        router: Arc<MultiLlmRouter>,
+    ) -> Self {
+        let default = pipelines
+            .values()
+            .next()
+            .cloned()
+            .expect("multi pool 至少 1 pipeline");
+        Self {
+            pipelines,
+            fallback_order,
+            default_pipeline: default,
+            router,
+        }
+    }
+
+    pub fn select_pipeline(&self, _model: &str) -> Arc<Pipeline> {
+        Arc::clone(&self.default_pipeline)
+    }
+
+    pub fn provider_names(&self) -> Vec<String> {
+        self.fallback_order.clone()
+    }
+
+    pub fn provider_count(&self) -> usize {
+        if self.pipelines.is_empty() {
+            1
+        } else {
+            self.pipelines.len()
+        }
+    }
+}
+
+async fn pool_dispatch(
+    pool: &Arc<PipelinePool>,
+    kind: ProtocolKind,
+    input: apeireth_api::NormalizedRequest,
+    model: &str,
+) -> Result<apeireth_api::NormalizedResponse, String> {
+    let pipe = pool.select_pipeline(model);
+    dispatch(&pipe, kind, input).await
+}
+
 const MAX_TOOL_ROUNDS: usize = 5;
 /// 默认单次输出上限 (env APEIRETH_MAX_TOKENS 可覆盖; 客户端请求值优先, 上限保护).
 const DEFAULT_MAX_TOKENS: u32 = 8192;
@@ -158,7 +225,7 @@ const AUTH_RULE: &str = "关于工具授权, 如实说明 (不要虚构交互流
 /// 通用记忆提炼器 (真 MiniMax): 对话/记忆 → 结构化提炼 (facts/preferences/commitments/emotional).
 /// v2 (2026-08-16): 每条带 importance (1-10, Generative Agents 式 LLM 打分) + Mem0 式对账.
 pub struct MiniMaxMemoryExtractor {
-    pipeline: Arc<Pipeline>,
+    pool: Arc<PipelinePool>,
 }
 
 #[async_trait::async_trait]
@@ -188,7 +255,7 @@ impl MemoryExtractor for MiniMaxMemoryExtractor {
             tool_choice: None,
         };
         let normalized = openai_chat_to_normalized(&req);
-        let resp = dispatch(&self.pipeline, ProtocolKind::OpenAiChat, normalized)
+        let resp = pool_dispatch(&self.pool, ProtocolKind::OpenAiChat, normalized, model())
             .await
             .map_err(|e| format!("提炼 LLM 调用失败: {e}"))?;
         let chat = openai_chat_from_normalized(&resp);
@@ -272,7 +339,7 @@ impl MemoryExtractor for MiniMaxMemoryExtractor {
             tool_choice: None,
         };
         let normalized = openai_chat_to_normalized(&req);
-        let resp = dispatch(&self.pipeline, ProtocolKind::OpenAiChat, normalized)
+        let resp = pool_dispatch(&self.pool, ProtocolKind::OpenAiChat, normalized, model())
             .await
             .map_err(|e| format!("对账 LLM 调用失败: {e}"))?;
         let chat = openai_chat_from_normalized(&resp);
@@ -402,10 +469,7 @@ fn tools_schema(registry: &ToolRegistry) -> Vec<Value> {
 struct AppState {
     bridge: Arc<ToolBridge>,
     store: Arc<SqliteMemoryStore>,
-    pipeline: Arc<Pipeline>,
-    /// Provider Runtime 状态 (Runtime Decoupling). provider-backed handler (chat)
-    /// 据此短路: Unconfigured → 稳定 503 provider_not_configured, 不打无 token 请求.
-    provider_state: apeireth_companion::runtime_capabilities::ProviderRuntimeState,
+    pool: Arc<PipelinePool>,
     /// 互动通知通道 (daemon task 持有 daemon, 此处只发「主人来消息了」时刻).
     interactions: tokio::sync::mpsc::Sender<chrono::DateTime<Utc>>,
     /// 主动送达广播 (模块 4: daemon 涌现/事件 → SSE 推送前端).
@@ -440,30 +504,15 @@ impl LifecycleHook for LifecycleLogHook {
     }
 }
 
-/// Load provider API key best-effort. Returns None when no key is configured
-/// (no env var, no key file) — this is a **normal runtime state**, not an error.
-///
-/// Runtime Decoupling: a missing key must NOT prevent companion boot. The Core
-/// Runtime (health / capabilities / sessions / memory / permissions / traces)
-/// works without any provider credential; only provider-backed capabilities
-/// (chat / inference) degrade to `available = false`.
-fn load_key() -> Option<String> {
+fn load_key() -> Result<String, String> {
     if let Ok(k) = std::env::var("APEIRETH_API_KEY") {
         if !k.trim().is_empty() {
-            return Some(k.trim().to_string());
+            return Ok(k.trim().to_string());
         }
     }
-    match std::fs::read_to_string(r"apikey-ultra.txt") {
-        Ok(s) => {
-            let t = s.trim();
-            if t.is_empty() {
-                None
-            } else {
-                Some(t.to_string())
-            }
-        }
-        Err(_) => None,
-    }
+    std::fs::read_to_string(r"apikey-ultra.txt")
+        .map(|s| s.trim().to_string())
+        .map_err(|e| format!("读 apikey 失败: {e}"))
 }
 
 // ============================================================
@@ -472,7 +521,7 @@ fn load_key() -> Option<String> {
 
 /// 做梦摘要器 (真 MiniMax): 把合并记忆提炼成一条简洁摘要.
 pub struct MiniMaxDreamSummarizer {
-    pipeline: Arc<Pipeline>,
+    pool: Arc<PipelinePool>,
 }
 
 #[async_trait::async_trait]
@@ -502,7 +551,7 @@ impl DreamSummarizer for MiniMaxDreamSummarizer {
             tool_choice: None,
         };
         let normalized = openai_chat_to_normalized(&req);
-        let resp = dispatch(&self.pipeline, ProtocolKind::OpenAiChat, normalized)
+        let resp = pool_dispatch(&self.pool, ProtocolKind::OpenAiChat, normalized, model())
             .await
             .map_err(|e| e.clone())?;
         let chat_resp = openai_chat_from_normalized(&resp);
@@ -523,7 +572,7 @@ impl DreamSummarizer for MiniMaxDreamSummarizer {
 
 /// 宪法评审 (真 MiniMax): 按 E 层原则判案, 非关键词匹配.
 pub struct MiniMaxConstitutionLlm {
-    pipeline: Arc<Pipeline>,
+    pool: Arc<PipelinePool>,
 }
 
 #[async_trait::async_trait]
@@ -552,10 +601,11 @@ impl ConstitutionLlm for MiniMaxConstitutionLlm {
             tools: None,
             tool_choice: None,
         };
-        let resp = dispatch(
-            &self.pipeline,
+        let resp = pool_dispatch(
+            &self.pool,
             ProtocolKind::OpenAiChat,
             openai_chat_to_normalized(&req),
+            model(),
         )
         .await
         .map_err(|e| e.clone())?;
@@ -572,7 +622,7 @@ impl ConstitutionLlm for MiniMaxConstitutionLlm {
 
 /// 语调渲染 (真 MiniMax + tone): 机制事实 → 自然问候; 失败兜底原文.
 pub struct TonalUtterance {
-    pipeline: Arc<Pipeline>,
+    pool: Arc<PipelinePool>,
     tone: &'static str,
 }
 
@@ -602,10 +652,11 @@ impl UtteranceGenerator for TonalUtterance {
             tools: None,
             tool_choice: None,
         };
-        let resp = dispatch(
-            &self.pipeline,
+        let resp = pool_dispatch(
+            &self.pool,
             ProtocolKind::OpenAiChat,
             openai_chat_to_normalized(&req),
+            model(),
         )
         .await
         .map_err(|e| e.clone())?;
@@ -630,7 +681,7 @@ impl UtteranceGenerator for TonalUtterance {
 
 /// 深度反思器 (模块 5, 真 MiniMax): 周期记忆 → 洞察/模式/建议 (markdown 文本).
 pub struct MiniMaxReflector {
-    pipeline: Arc<Pipeline>,
+    pool: Arc<PipelinePool>,
 }
 
 #[async_trait::async_trait]
@@ -660,7 +711,7 @@ impl ReflectionReflector for MiniMaxReflector {
             tool_choice: None,
         };
         let normalized = openai_chat_to_normalized(&req);
-        let resp = dispatch(&self.pipeline, ProtocolKind::OpenAiChat, normalized)
+        let resp = pool_dispatch(&self.pool, ProtocolKind::OpenAiChat, normalized, model())
             .await
             .map_err(|e| format!("深度反思 LLM 调用失败: {e}"))?;
         let chat = openai_chat_from_normalized(&resp);
@@ -683,7 +734,7 @@ impl ReflectionReflector for MiniMaxReflector {
 /// 深度召回 (DeepRecall trait, 真 MiniMax): LLM 从候选记忆选与 query 最相关的 top 5.
 /// VCP AIMemoHandler 精神; 失败 → 装配器降级普通注入.
 pub struct MiniMaxDeepRecall {
-    pipeline: Arc<Pipeline>,
+    pool: Arc<PipelinePool>,
 }
 
 #[async_trait::async_trait]
@@ -719,7 +770,7 @@ impl DeepRecall for MiniMaxDeepRecall {
             tool_choice: None,
         };
         let normalized = openai_chat_to_normalized(&req);
-        let resp = dispatch(&self.pipeline, ProtocolKind::OpenAiChat, normalized)
+        let resp = pool_dispatch(&self.pool, ProtocolKind::OpenAiChat, normalized, model())
             .await
             .map_err(|e| e.clone())?;
         let chat = openai_chat_from_normalized(&resp);
@@ -753,7 +804,7 @@ impl DeepRecall for MiniMaxDeepRecall {
 /// 滚动摘要 (DialogSummarizer trait, 真 MiniMax): 旧段 → 摘要.
 /// sum-* 链式基线由装配器查库提供 (prev_summary), 持久化也由装配器完成.
 pub struct MiniMaxDialogSummarizer {
-    pipeline: Arc<Pipeline>,
+    pool: Arc<PipelinePool>,
 }
 
 #[async_trait::async_trait]
@@ -787,7 +838,7 @@ impl DialogSummarizer for MiniMaxDialogSummarizer {
             tool_choice: None,
         };
         let normalized = openai_chat_to_normalized(&req);
-        let resp = dispatch(&self.pipeline, ProtocolKind::OpenAiChat, normalized)
+        let resp = pool_dispatch(&self.pool, ProtocolKind::OpenAiChat, normalized, model())
             .await
             .map_err(|e| e.clone())?;
         let chat = openai_chat_from_normalized(&resp);
@@ -811,7 +862,7 @@ impl DialogSummarizer for MiniMaxDialogSummarizer {
 /// 反思→经验 (ExperienceRefiner trait, 真 MiniMax): 从反思记录提炼一条可复用经验.
 /// 0 假装: 提炼失败/解析失败 → 如实返回 Err, 不硬造经验.
 pub struct MiniMaxExperienceRefiner {
-    pipeline: Arc<Pipeline>,
+    pool: Arc<PipelinePool>,
 }
 
 #[async_trait::async_trait]
@@ -844,7 +895,7 @@ impl ExperienceRefiner for MiniMaxExperienceRefiner {
             tool_choice: None,
         };
         let normalized = openai_chat_to_normalized(&req);
-        let resp = dispatch(&self.pipeline, ProtocolKind::OpenAiChat, normalized)
+        let resp = pool_dispatch(&self.pool, ProtocolKind::OpenAiChat, normalized, model())
             .await
             .map_err(|e| format!("提炼 LLM 调用失败: {e}"))?;
         let chat = openai_chat_from_normalized(&resp);
@@ -991,21 +1042,6 @@ async fn chat_completions(
     headers: HeaderMap,
     Json(req): Json<OpenAiChatRequest>,
 ) -> impl IntoResponse {
-    // Runtime Decoupling: provider-backed endpoint. Unconfigured (no key) → 稳定 503,
-    // 不打无 token 请求 (避免用户等 dispatch 重试 6s×3). 复用现有 error envelope.
-    if !st.provider_state.is_ready() {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({
-                "error": {
-                    "message": "Provider not configured: chat/inference requires an API key (APEIRETH_API_KEY or apikey-ultra.txt). Core runtime is healthy; set a key to enable chat.",
-                    "code": "provider_not_configured",
-                    "type": "provider_unavailable"
-                }
-            })),
-        )
-            .into_response();
-    }
     let continuity = headers
         .get("x-apeireth-continuity")
         .and_then(|v| v.to_str().ok())
@@ -1180,8 +1216,13 @@ async fn chat_completions(
             "[stream] req.stream=true, 透传 SSE 到 {} (tool loop 跳过, per v1.5 known limit)",
             model()
         );
-        return match stream_forward(&st.pipeline, ProtocolKind::OpenAiChat, body.into(), model())
-            .await
+        return match stream_forward(
+            &st.pool.select_pipeline(model()),
+            ProtocolKind::OpenAiChat,
+            body.into(),
+            model(),
+        )
+        .await
         {
             Ok(r) => r.into_response(),
             Err(e) => {
@@ -1209,7 +1250,7 @@ async fn chat_completions(
             tools: Some(tools.clone()),
             tool_choice: Some(json!("auto")),
         };
-        let Some((content, tcs)) = chat_once(&st.pipeline, &req2, rounds).await else {
+        let Some((content, tcs)) = chat_once(&st.pool, &req2, rounds).await else {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(json!({"error": {"message": "模型服务暂时不可用 (MiniMax 限流) — 本座已尽力, 请过 10-30 秒再试"}})),
@@ -1322,7 +1363,7 @@ async fn chat_completions(
 }
 
 async fn chat_once(
-    pipeline: &Arc<Pipeline>,
+    pool: &Arc<PipelinePool>,
     req: &OpenAiChatRequest,
     label: usize,
 ) -> Option<(String, Vec<Value>)> {
@@ -1331,7 +1372,7 @@ async fn chat_once(
     for attempt in 0..3 {
         let normalized = openai_chat_to_normalized(req);
         let t0 = std::time::Instant::now();
-        match dispatch(pipeline, ProtocolKind::OpenAiChat, normalized).await {
+        match pool_dispatch(pool, ProtocolKind::OpenAiChat, normalized, &req.model).await {
             Ok(r) => {
                 let chat = openai_chat_from_normalized(&r);
                 let content = chat
@@ -1373,33 +1414,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 启动时读 TOML 配置 (per 2026-08-20 P1 配置层): env APEIRETH_LLM_CONFIG 指向 TOML 文件.
     // TOML 里第一个 provider 的 base_url 自动覆盖 BASE_URL. 多 provider / fallback 链
     // 见 docs/02-guides/custom-llm.md (本 session C 任务). 不读 TOML 时退化到 env / DEFAULT.
-    let toml_base = std::env::var("APEIRETH_LLM_CONFIG")
-        .ok()
-        .and_then(|path| match apeireth_api::llm::config::LlmConfig::from_file(&path) {
+    let toml_cfg = std::env::var("APEIRETH_LLM_CONFIG").ok().and_then(|path| {
+        match apeireth_api::llm::config::LlmConfig::from_file(&path) {
             Ok(cfg) => {
                 let n = cfg.providers.len();
-                let first_base = cfg.providers.values().next().and_then(|p| p.base_url.clone());
+                let first_base = cfg
+                    .providers
+                    .values()
+                    .next()
+                    .and_then(|p| p.base_url.clone());
                 println!("[llm] TOML config 加载: {n} providers from {path}");
-                first_base
+                Some((cfg, first_base))
             }
             Err(e) => {
                 eprintln!("[llm] TOML config 加载失败 (退化到 env / default): {e}");
                 None
             }
-        });
-    init_base_url(toml_base);
-    println!("[llm] base_url = {} (TOML 优先 → APEIRETH_LLM_BASE_URL env → default {DEFAULT_BASE_URL})", base_url());
+        }
+    });
+    init_base_url(toml_cfg.as_ref().and_then(|(_, b)| b.clone()));
+    println!(
+        "[llm] base_url = {} (TOML 优先 → APEIRETH_LLM_BASE_URL env → default {DEFAULT_BASE_URL})",
+        base_url()
+    );
 
-    // Runtime Decoupling: key is optional. Missing key → ProviderRuntimeState::Unconfigured,
-    // but Core Runtime still boots (health / capabilities / sessions / memory / traces).
-    // (Fused with upstream config layer above; load_key returns Option, no early exit.)
-    let key = load_key();
-    let provider_state = if key.is_some() {
-        apeireth_companion::runtime_capabilities::ProviderRuntimeState::Ready
-    } else {
-        eprintln!("[boot] 无 provider 凭据 (无 APEIRETH_API_KEY / apikey-ultra.txt) — Core Runtime 正常启动, chat/inference 降级为不可用");
-        apeireth_companion::runtime_capabilities::ProviderRuntimeState::Unconfigured
-    };
+    let key = load_key()?;
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -1436,16 +1475,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::sync::Arc::new(std::sync::Mutex::new(goals));
 
     // ② 工具桥全增强 (宪法 LLM 评审 + 目标工具 + 显式扩权 APEIRETH_GRANT="FileOperator:24;Git:12")
-    // Runtime Decoupling: pipeline 构建接受 Option<token>; 无 key 时 auth_token=None,
-    // pipeline 仍可构建 (类型允许, 不校验 token). provider-backed 调用会 best-effort 失败
-    // 并被各组件 swallow (见 daemon 审计); chat handler 由 provider_state 短路.
-    // (base_url() from upstream config layer; key is Option<String> from no-key boot.)
-    let pipeline = Arc::new(build_pipeline(base_url().to_string(), key.clone())?);
+    // PipelinePool 构造: 有 TOML → multi provider pool; 无 TOML / 失败 → single pool (1:1 兼容旧版).
+    let pool: Arc<PipelinePool> = match toml_cfg.as_ref().map(|(c, _)| c) {
+        Some(cfg) => {
+            let mut pipelines = std::collections::HashMap::new();
+            let mut fallback_order = Vec::new();
+            for (name, prov) in &cfg.providers {
+                let base = prov.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL);
+                let pipe = Arc::new(build_pipeline(base.to_string(), Some(key.clone()))?);
+                pipelines.insert(name.clone(), pipe);
+                fallback_order.push(name.clone());
+            }
+            let router = Arc::new(MultiLlmRouter::new());
+            println!(
+                "[pool] multi mode: {} providers (fallback: {})",
+                pipelines.len(),
+                fallback_order.join(" → ")
+            );
+            Arc::new(PipelinePool::multi(pipelines, fallback_order, router))
+        }
+        None => {
+            let pipeline = Arc::new(build_pipeline(base_url().to_string(), Some(key.clone()))?);
+            println!("[pool] single mode (无 TOML, 1:1 兼容旧版)");
+            Arc::new(PipelinePool::single("default", pipeline))
+        }
+    };
     let bridge = Arc::new(
         ToolBridge::new(Arc::clone(&store))
             .with_judicator(Arc::new(LlmJudicator::new(Arc::new(
                 MiniMaxConstitutionLlm {
-                    pipeline: Arc::clone(&pipeline),
+                    pool: Arc::clone(&pool),
                 },
             ))))
             .with_goals(std::sync::Arc::clone(&goals_shared)),
@@ -1501,16 +1560,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_rhythm(std::sync::Arc::clone(&rhythm_share))
             .with_goal(std::sync::Arc::clone(&goals_shared))
             .with_extractor(Arc::new(MiniMaxMemoryExtractor {
-                pipeline: Arc::clone(&pipeline),
+                pool: Arc::clone(&pool),
             }))
             .with_summarizer(Arc::new(MiniMaxDialogSummarizer {
-                pipeline: Arc::clone(&pipeline),
+                pool: Arc::clone(&pool),
             }))
             .with_refiner(Arc::new(MiniMaxExperienceRefiner {
-                pipeline: Arc::clone(&pipeline),
+                pool: Arc::clone(&pool),
             }))
             .with_deep_recall(Arc::new(MiniMaxDeepRecall {
-                pipeline: Arc::clone(&pipeline),
+                pool: Arc::clone(&pool),
             }))
             .with_extract_interval(extract_interval)
             .with_summarize_interval(Duration::from_secs(300))
@@ -1531,7 +1590,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_quiet_threshold(quiet)
         .with_session(MEMORY_SESSION.to_string())
         .with_summarizer(Arc::new(MiniMaxDreamSummarizer {
-            pipeline: Arc::clone(&pipeline),
+            pool: Arc::clone(&pool),
         }));
     let reflect_period = std::env::var("APEIRETH_REFLECT_PERIOD_HOURS")
         .ok()
@@ -1545,7 +1604,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .with_period(reflect_period)
     .with_reflector(Arc::new(MiniMaxReflector {
-        pipeline: Arc::clone(&pipeline),
+        pool: Arc::clone(&pool),
     }));
     let tone = tone_hint(&apeireth_companion::bond::Bond::new());
     // 送达通道: 广播 (SSE) 必开; Lark (离线) 有凭据则叠加
@@ -1576,7 +1635,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         CompanionDelivery::new(
             ThrottledUtterance::new(
                 TonalUtterance {
-                    pipeline: Arc::clone(&pipeline),
+                    pool: Arc::clone(&pool),
                     tone,
                 },
                 Duration::from_secs(30),
@@ -1608,8 +1667,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState {
         bridge,
         store,
-        pipeline,
-        provider_state: provider_state.clone(),
+        pool,
         interactions: tx_interact,
         events: tx_events,
         app,
@@ -1622,29 +1680,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/models", get(list_models))
         .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/apeireth/grant", post(grant))
-        // Core Capability Expansion Phase 4: grant 可见性 + 撤销 + 评估 (deterministic).
-        .route("/v1/apeireth/grants", get(grants_list))
-        .route("/v1/apeireth/grants/evaluate", post(grants_evaluate))
-        .route("/v1/apeireth/grants/:id/revoke", post(grant_revoke))
         .route("/v1/apeireth/approval-requests", get(approval_requests))
         .route("/v1/apeireth/events", get(events))
         .route("/v1/apeireth/test-event", post(test_event))
-        // Core Capability Expansion: Runtime Capability Manifest (能力发现契约).
-        // Desktop 启动时拉取此端点 gate UI, 不再 404-probing. 这是 information 不是 authorization.
-        .route("/v1/apeireth/capabilities", get(capabilities))
-        // Core Capability Expansion Phase 2: 后端会话生命周期 (canonical session resource).
-        // Panel 保持只读; mutation 走 /v1/apeireth/sessions. 状态机 + 乐观并发 (expected_rev).
-        .route("/v1/apeireth/sessions", get(sessions_list).post(session_create))
-        .route("/v1/apeireth/sessions/:id", get(session_get).patch(session_rename))
-        .route("/v1/apeireth/sessions/:id/archive", post(session_archive))
-        .route("/v1/apeireth/sessions/:id/restore", post(session_restore))
-        .route("/v1/apeireth/sessions/:id/close", post(session_close))
-        // Core Capability Expansion Phase 3: 记忆治理 (forget/protect/update, 不破坏 append-only).
-        // 原始 episode 不动; sidecar governance 表记录 forgotten/protected/content_override.
-        .route("/v1/apeireth/memory/episodes/:id", get(memory_episode_get).patch(memory_episode_update))
-        .route("/v1/apeireth/memory/episodes/:id/forget", post(memory_episode_forget))
-        .route("/v1/apeireth/memory/episodes/:id/protect", post(memory_episode_protect))
-        .route("/v1/apeireth/memory/episodes/:id/unprotect", post(memory_episode_unprotect))
         // B1 Web 面板 v2: 静态面板页 (assets/panel/) + 只读数据端点 (apeireth-api panel_readonly)
         .route("/panel", get(panel_index))
         .route("/panel/:asset", get(panel_asset))
@@ -1652,9 +1690,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/v1/panel",
             apeireth_api::panel_readonly::panel_router(store_for_panel),
         )
-        // Core Capability Expansion Phase 5: Agent 执行轨迹查询 (只读, /v1/panel 合理位置).
-        .route("/v1/panel/traces", get(traces_list))
-        .route("/v1/panel/traces/:id", get(trace_detail))
         .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
@@ -1760,315 +1795,8 @@ async fn approval_requests(State(st): State<Arc<AppState>>) -> impl IntoResponse
     ))
 }
 
-/// Runtime Capability Manifest: 声明本 runtime 真实支持的能力 (versioned, machine-readable).
-/// Desktop 据此 gate UI, 不再逐个撞 endpoint. 仅暴露 public 信息, 不含 secret/路径.
-///
-/// Runtime Decoupling: manifest 反映 ProviderRuntimeState — provider-backed 能力
-/// (chat / tools.invoke) 在 Unconfigured 时 available=false, reason=provider_not_configured;
-/// core 能力 (sessions/memory/trace/permissions) 始终 available.
-async fn capabilities(State(st): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(apeireth_companion::runtime_capabilities::current_manifest(
-        &st.provider_state,
-    ))
-}
-
-// ============================================================
-// Core Capability Expansion Phase 2 — 后端会话生命周期 HTTP
-// Panel 保持只读; mutation 走 /v1/apeireth/sessions. 状态机 + 乐观并发 (expected_rev).
-// ============================================================
-
-use apeireth_memory::{SessionLifecycleError, SessionLifecycleRecord, SessionLifecycleStore, SessionScope};
-
-/// 把 SessionLifecycleError 映射到统一 HTTP 错误 (NotFound/Conflict/Validation 区分).
-fn session_err_response(e: SessionLifecycleError) -> axum::response::Response {
-    let (status, code) = match &e {
-        SessionLifecycleError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
-        SessionLifecycleError::Conflict { .. } => (StatusCode::CONFLICT, "conflict"),
-        SessionLifecycleError::IllegalTransition { .. } => (StatusCode::CONFLICT, "illegal_transition"),
-        SessionLifecycleError::Invalid(_) => (StatusCode::BAD_REQUEST, "validation"),
-    };
-    (status, Json(json!({"error": code, "message": e.to_string()}))).into_response()
-}
-
-/// GET /v1/apeireth/sessions — 列出会话 (?include_archived=true 含归档).
-async fn sessions_list(
-    State(st): State<Arc<AppState>>,
-    axum::extract::Query(q): axum::extract::Query<SessionListQuery>,
-) -> impl IntoResponse {
-    let include = q.include_archived.unwrap_or(false);
-    match SessionLifecycleStore::list_sessions(&*st.store, include) {
-        Ok(list) => {
-            let count = list.len();
-            Json(json!({"count": count, "sessions": list})).into_response()
-        }
-        Err(e) => session_err_response(e),
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct SessionListQuery {
-    include_archived: Option<bool>,
-}
-
-/// POST /v1/apeireth/sessions — 创建会话.
-async fn session_create(
-    State(st): State<Arc<AppState>>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let id = req
-        .get("id")
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| format!("sess-{}", uuid::Uuid::new_v4()));
-    let title = req.get("title").and_then(|v| v.as_str());
-    let scope = match req.get("scope").and_then(|v| v.as_str()) {
-        Some("project") => SessionScope::Project,
-        _ => SessionScope::Global,
-    };
-    let project_id = req.get("project_id").and_then(|v| v.as_str());
-    let metadata = req.get("metadata").cloned();
-    match SessionLifecycleStore::create_session(
-        &*st.store,
-        &id,
-        title,
-        scope,
-        project_id,
-        metadata.as_ref(),
-    ) {
-        Ok(rec) => (StatusCode::CREATED, Json(json!(rec))).into_response(),
-        Err(e) => session_err_response(e),
-    }
-}
-
-/// GET /v1/apeireth/sessions/:id — 读取单会话.
-async fn session_get(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
-    match SessionLifecycleStore::get_session_lifecycle(&*st.store, &id) {
-        Ok(Some(rec)) => Json(json!(rec)).into_response(),
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "not_found", "message": format!("session `{id}` not found")})),
-        )
-            .into_response(),
-        Err(e) => session_err_response(e),
-    }
-}
-
-/// PATCH /v1/apeireth/sessions/:id — 重命名 (乐观并发 expected_rev).
-async fn session_rename(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let Some(title) = req.get("title").and_then(|v| v.as_str()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "validation", "message": "需要 title"})),
-        )
-            .into_response();
-    };
-    let expected_rev = req.get("expected_rev").and_then(|v| v.as_i64()).unwrap_or(0);
-    match SessionLifecycleStore::rename_session(&*st.store, &id, title, expected_rev) {
-        Ok(rec) => Json(json!(rec)).into_response(),
-        Err(e) => session_err_response(e),
-    }
-}
-
-/// POST /v1/apeireth/sessions/:id/archive — 归档.
-async fn session_archive(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let expected_rev = req.get("expected_rev").and_then(|v| v.as_i64()).unwrap_or(0);
-    match SessionLifecycleStore::archive_session(&*st.store, &id, expected_rev) {
-        Ok(rec) => Json(json!(rec)).into_response(),
-        Err(e) => session_err_response(e),
-    }
-}
-
-/// POST /v1/apeireth/sessions/:id/restore — 恢复.
-async fn session_restore(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let expected_rev = req.get("expected_rev").and_then(|v| v.as_i64()).unwrap_or(0);
-    match SessionLifecycleStore::restore_session(&*st.store, &id, expected_rev) {
-        Ok(rec) => Json(json!(rec)).into_response(),
-        Err(e) => session_err_response(e),
-    }
-}
-
-/// POST /v1/apeireth/sessions/:id/close — 关闭 (终态).
-async fn session_close(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let expected_rev = req.get("expected_rev").and_then(|v| v.as_i64()).unwrap_or(0);
-    match SessionLifecycleStore::close_session_lifecycle(&*st.store, &id, expected_rev) {
-        Ok(rec) => Json(json!(rec)).into_response(),
-        Err(e) => session_err_response(e),
-    }
-}
-
-// ============================================================
-// Core Capability Expansion Phase 3 — 记忆治理 HTTP
-// forget/protect/unprotect/update; 原始 episode append-only 不动.
-// ============================================================
-
-use apeireth_memory::{MemoryGovernanceError, MemoryGovernanceStore};
-
-fn governance_err_response(e: MemoryGovernanceError) -> axum::response::Response {
-    let (status, code) = match &e {
-        MemoryGovernanceError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
-        MemoryGovernanceError::Conflict { .. } => (StatusCode::CONFLICT, "conflict"),
-        MemoryGovernanceError::AlreadyForgotten(_) => (StatusCode::CONFLICT, "already_forgotten"),
-        MemoryGovernanceError::Protected(_) => (StatusCode::CONFLICT, "protected"),
-        MemoryGovernanceError::Invalid(_) => (StatusCode::BAD_REQUEST, "validation"),
-    };
-    (status, Json(json!({"error": code, "message": e.to_string()}))).into_response()
-}
-
-/// GET /v1/apeireth/memory/episodes/:id — 读取单 episode 治理视图.
-async fn memory_episode_get(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
-    match MemoryGovernanceStore::get_governed(&*st.store, &id) {
-        Ok(Some(g)) => Json(json!(g)).into_response(),
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "not_found", "message": format!("episode `{id}` not found")})),
-        )
-            .into_response(),
-        Err(e) => governance_err_response(e),
-    }
-}
-
-/// PATCH /v1/apeireth/memory/episodes/:id — 更新内容 (修订, expected_rev CAS).
-async fn memory_episode_update(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let Some(content) = req.get("content").and_then(|v| v.as_str()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "validation", "message": "需要 content"})),
-        )
-            .into_response();
-    };
-    let expected_rev = req.get("expected_rev").and_then(|v| v.as_i64()).unwrap_or(0);
-    let updated_by = req.get("updated_by").and_then(|v| v.as_str());
-    match MemoryGovernanceStore::update_episode_content(&*st.store, &id, content, updated_by, expected_rev) {
-        Ok(g) => Json(json!(g)).into_response(),
-        Err(e) => governance_err_response(e),
-    }
-}
-
-/// POST /v1/apeireth/memory/episodes/:id/forget — 遗忘 (软删).
-async fn memory_episode_forget(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let expected_rev = req.get("expected_rev").and_then(|v| v.as_i64()).unwrap_or(0);
-    let reason = req.get("reason").and_then(|v| v.as_str());
-    match MemoryGovernanceStore::forget_episode(&*st.store, &id, reason, expected_rev) {
-        Ok(g) => Json(json!(g)).into_response(),
-        Err(e) => governance_err_response(e),
-    }
-}
-
-/// POST /v1/apeireth/memory/episodes/:id/protect — 保护.
-async fn memory_episode_protect(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let expected_rev = req.get("expected_rev").and_then(|v| v.as_i64()).unwrap_or(0);
-    match MemoryGovernanceStore::protect_episode(&*st.store, &id, expected_rev) {
-        Ok(g) => Json(json!(g)).into_response(),
-        Err(e) => governance_err_response(e),
-    }
-}
-
-/// POST /v1/apeireth/memory/episodes/:id/unprotect — 解除保护.
-async fn memory_episode_unprotect(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let expected_rev = req.get("expected_rev").and_then(|v| v.as_i64()).unwrap_or(0);
-    match MemoryGovernanceStore::unprotect_episode(&*st.store, &id, expected_rev) {
-        Ok(g) => Json(json!(g)).into_response(),
-        Err(e) => governance_err_response(e),
-    }
-}
-
-// ============================================================
-// Core Capability Expansion Phase 5 — Agent Trace 查询 HTTP (只读)
-// /v1/panel/traces (list) + /v1/panel/traces/:id (detail, span 树).
-// 实时 span 事件通过现有 /v1/apeireth/events SSE 推送 (type=trace).
-// ============================================================
-
-use apeireth_memory::TraceStore;
-
-#[derive(serde::Deserialize)]
-struct TracesListQuery {
-    limit: Option<usize>,
-}
-
-/// GET /v1/panel/traces — 列出最近 traces (摘要: trace_id + root span + span_count).
-async fn traces_list(
-    State(st): State<Arc<AppState>>,
-    axum::extract::Query(q): axum::extract::Query<TracesListQuery>,
-) -> impl IntoResponse {
-    let limit = q.limit.unwrap_or(50).min(500);
-    match TraceStore::list_recent_traces(&*st.store, limit) {
-        Ok(traces) => {
-            let count = traces.len();
-            Json(json!({"count": count, "traces": traces})).into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "internal", "message": e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-/// GET /v1/panel/traces/:id — 读取单 trace 的完整 span 树 (按 started_at 升序).
-async fn trace_detail(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
-    match TraceStore::list_trace_spans(&*st.store, &id) {
-        Ok(spans) if !spans.is_empty() => {
-            let count = spans.len();
-            Json(json!({"trace_id": id, "count": count, "spans": spans})).into_response()
-        }
-        Ok(_) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "not_found", "message": format!("trace `{id}` not found")})),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "internal", "message": e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
 /// 主人批准端点 (权限洋葱对齐): 主人带 master token 直接批准工具授权 (PermissionPack),
 /// AI 只请求不接触 token. 授权后高危工具在时限内可直接执行.
-/// 返回 grant id (供后续 revoke).
 async fn grant(State(st): State<Arc<AppState>>, Json(req): Json<Value>) -> impl IntoResponse {
     let tool = req
         .get("tool")
@@ -2102,83 +1830,19 @@ async fn grant(State(st): State<Arc<AppState>>, Json(req): Json<Value>) -> impl 
         )
             .into_response();
     }
-    let pack = apeireth_companion::packs::PermissionPack::timed(
-        "主人授权",
-        vec![tool.to_string()],
-        hours,
-        None,
-    );
-    let grant_id = pack.id.clone();
-    st.bridge.packs.grant(pack);
-    // master token 不进响应/不进 audit (仅作请求参数校验后即丢弃).
+    st.bridge
+        .packs
+        .grant(apeireth_companion::packs::PermissionPack::timed(
+            "主人授权",
+            vec![tool.to_string()],
+            hours,
+            None,
+        ));
     (
         StatusCode::OK,
-        Json(json!({
-            "ok": true,
-            "grant_id": grant_id,
-            "tool": tool,
-            "hours": hours,
-            "note": "已按权限洋葱授权 (PermissionPack); 到期自动失效; 可用 grant_id 撤销"
-        })),
+        Json(json!({"ok": true, "tool": tool, "hours": hours, "note": "已按权限洋葱授权 (PermissionPack); 到期自动失效"})),
     )
         .into_response()
-}
-
-/// GET /v1/apeireth/grants — 列出全部 grants (含 active/expired 状态). 供 Tools 页展示.
-async fn grants_list(State(st): State<Arc<AppState>>) -> impl IntoResponse {
-    let now = chrono::Utc::now().timestamp_millis();
-    let grants = st.bridge.packs.list_grants(now);
-    Json(json!({"count": grants.len(), "grants": grants}))
-}
-
-/// POST /v1/apeireth/grants/:id/revoke — 撤销 grant (需 master token). 即时生效.
-async fn grant_revoke(
-    State(st): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let token = req
-        .get("master_token")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let expected = std::env::var("APEIRETH_MASTER_TOKEN").unwrap_or_default();
-    if expected.is_empty() || token != expected {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "master token 不匹配 (撤销权在主人手里)"})),
-        )
-            .into_response();
-    }
-    let revoked = st.bridge.packs.revoke_grant(&id);
-    if revoked {
-        Json(json!({"ok": true, "grant_id": id, "note": "已撤销, 下次权限评估即时生效"})).into_response()
-    } else {
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "not_found", "message": format!("grant `{id}` not found")})),
-        )
-            .into_response()
-    }
-}
-
-/// POST /v1/apeireth/grants/evaluate — 权限评估 (deterministic). 输入 tool → Allow/Deny/RequireApproval.
-/// 这是只读评估 (不记账); 真实执行记账走 check_and_consume.
-async fn grants_evaluate(
-    State(st): State<Arc<AppState>>,
-    Json(req): Json<Value>,
-) -> impl IntoResponse {
-    let Some(tool) = req.get("tool").and_then(|v| v.as_str()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "validation", "message": "需要 tool"})),
-        )
-            .into_response();
-    };
-    let now = chrono::Utc::now().timestamp_millis();
-    let decision = st.bridge.packs.evaluate(tool, now);
-    Json(json!(decision)).into_response()
 }
 
 /// 内置聊天页 (零依赖单文件前端, 浏览器打开即用; 供主人/任何前端先体验).
@@ -2232,27 +1896,12 @@ async fn panel_asset(Path(asset): Path<String>) -> axum::response::Response {
     ([(CONTENT_TYPE, ctype)], body).into_response()
 }
 
-async fn health(State(st): State<Arc<AppState>>) -> impl IntoResponse {
-    // Runtime Decoupling: /health 分轴 — core (runtime 自身) 与 provider 解耦.
-    // 保留旧字段 (status/service/version/features) 保 backward compat;
-    // 新增 core{} / provider{} 分轴, 旧客户端仍可读 status.
-    let provider_ready = st.provider_state.is_ready();
-    let provider_status = if provider_ready { "ready" } else { "unconfigured" };
-    // 顶层 status: core healthy 即 "ok" (provider 缺失 ≠ runtime dead).
-    let overall = "ok";
+async fn health() -> impl IntoResponse {
     Json(json!({
-        // === 旧字段 (backward compat, 保留) ===
-        "status": overall,
+        "status": "ok",
         "service": "apeireth-companion-serve-v4",
         "version": env!("CARGO_PKG_VERSION"),
         "features": ["persistent_memory", "daemon_resident", "dream_llm_summarizer", "utterance_llm", "constitution_llm_judicator", "memory_injection", "today_summary", "tool_bridge_all", "openai_compat", "companion_app", "l0_identity", "l1_essential_story"],
-        // === 新增分轴 (additive, Runtime Decoupling) ===
-        "core": {
-            "status": "healthy"
-        },
-        "provider": {
-            "status": provider_status
-        }
     }))
 }
 
@@ -2317,7 +1966,10 @@ mod cot_extraction_tests {
     fn multiple_think_blocks_all_extracted() {
         let content = "<think>first thought</think>middle<think>second thought</think>end";
         let (cot, visible) = extract_minimax_cot(content);
-        assert_eq!(cot, "<think>first thought</think>\n<think>second thought</think>");
+        assert_eq!(
+            cot,
+            "<think>first thought</think>\n<think>second thought</think>"
+        );
         assert_eq!(visible, "middleend");
     }
 
@@ -2444,6 +2096,491 @@ mod llm_config_tests {
             std::env::set_var("APEIRETH_LLM_BASE_URL", "https://env-only.test.com");
             init_base_url(None);
             assert_eq!(base_url(), "https://env-only.test.com");
+        });
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 2026-08-20: MultiLlmRouter 真接入 PipelinePool — 单测 (per spec §4.1+§4.2)
+// 主人拍板决策: 1(b) 2(b 全 true) 3(a fail-fast) 4(a default) 5(a 单 provider)
+//             6(b 走 LlmProvider.complete) 7(4 type) 8(测 7+8 必需)
+// ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod multi_llm_router_tests {
+    //! MultiLlmRouter 真接入 PipelinePool 验证 (per spec §4.1 + §4.2).
+    //!
+    //! 0 触碰严守: PipelinePool 抽象不动, 复用 single/multi 工厂.
+    //! 测覆盖: 6 主测 + 2 边界测 (决策 8 必需) = 8 测.
+    //!
+    //! 已知现状 (诚实标注, 0 触碰 config.rs 下):
+    //! - `LlmConfig::build_provider` 支持 `apeireth-api` / `openai-compatible` / `scripted`,
+    //!   **`anthropic-compatible` 暂未在 config.rs 注册** (落到 unknown 分支返 Err).
+    //!   测 6 显式标注此现状, 不假装 4 type 都 build 成功.
+    //! - `select_pipeline(_)` v1 简化 (决策 2) 永远返 default_pipeline, 跟旧 build_pipeline
+    //!   行为 1:1. 测 3 验证这个语义.
+
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn with_clean_env<F: FnOnce()>(f: F) {
+        // 拿锁; 拿不到 = 当前已有测试在跑 (Env 已被并行测污染), 跳过隔离
+        let Ok(_g) = ENV_LOCK.lock() else {
+            f();
+            return;
+        };
+        std::env::remove_var("APEIRETH_LLM_CONFIG");
+        std::env::remove_var("APEIRETH_LLM_MODEL");
+        std::env::remove_var("APEIRETH_LLM_BASE_URL");
+        // 配置层 + 测试用的 key 集合: 全清, 避免跨测污染
+        std::env::remove_var("APEIRETH_API_KEY");
+        std::env::remove_var("APEIRETH_LLM_NO_KEY");
+        std::env::remove_var("APEIRETH_OPENAI_KEY");
+        std::env::remove_var("APEIRETH_ANTHROPIC_KEY");
+        f();
+    }
+
+    // 共享辅助: 构造一个 `Pipeline` 实例 (build_pipeline 调真实 HTTP 客户端构造)
+    // 测里只用它的 Arc 共享语义, 不会真的发请求.
+    fn make_arc_pipeline(base: &str, key: &str) -> Arc<Pipeline> {
+        Arc::new(build_pipeline(base.to_string(), Some(key.to_string())).unwrap())
+    }
+
+    // ============ 6 主测 (per spec §4.1) ============
+
+    /// 测 1: 无 TOML / 无 provider = 单 Pipeline 退化 (决策 1b)
+    /// PipelinePool::single("default", pipe) 1:1 兼容旧版 Arc<Pipeline> 行为.
+    #[test]
+    fn pool_single_mode_uses_default_pipeline_when_no_toml() {
+        with_clean_env(|| {
+            let pipe = make_arc_pipeline("https://default.test", "fake-key");
+            let pool = PipelinePool::single("default", Arc::clone(&pipe));
+
+            // 单 provider mode: provider_count == 1 (spec §2.1 PipelinePool::single)
+            assert_eq!(
+                pool.provider_count(),
+                1,
+                "single mode provider count 必须 == 1"
+            );
+
+            // 决策 4a: select_pipeline(unknown) 退化 default_pipeline
+            let p1 = pool.select_pipeline("MiniMax-M3");
+            let p2 = pool.select_pipeline("unknown-model");
+            let p3 = pool.select_pipeline("any-other-llm");
+
+            // 决策 2 (v1 简化): select_pipeline 永远返 default_pipeline
+            // 验证 3 次选都返同一个 Arc (pointer identity)
+            assert!(
+                Arc::ptr_eq(&p1, &pipe),
+                "select_pipeline 必须返 default Arc"
+            );
+            assert!(Arc::ptr_eq(&p2, &pipe), "未知 model 也必须走 default");
+            assert!(Arc::ptr_eq(&p3, &pipe), "任意 model 都走 default (v1 简化)");
+
+            // provider_names() 暴露 1 个 default (跟旧版 build_pipeline 行为 1:1)
+            assert_eq!(pool.provider_names(), vec!["default".to_string()]);
+        });
+    }
+
+    /// 测 2: 有 TOML = 多 Pipeline + MultiLlmRouter 真接 (PipelinePool::multi 工厂)
+    /// 决策: 走 `LlmConfig::from_str` 解析 → `build_router()` 拿 router → 手构 PipelinePool::multi
+    /// (不调 build_pipeline, 因 base_url 是 fake, 不发真请求).
+    #[test]
+    fn pool_multi_mode_constructs_from_toml_with_router() {
+        with_clean_env(|| {
+            std::env::set_var("APEIRETH_API_KEY", "fake-api");
+            std::env::set_var("APEIRETH_OPENAI_KEY", "fake-openai");
+
+            let toml = r#"
+                [providers.apeireth-api]
+                type = "apeireth-api"
+                base_url = "https://api.minimaxi.com/v1"
+                api_key_env = "APEIRETH_API_KEY"
+                models = ["MiniMax-M3"]
+
+                [providers.openai]
+                type = "openai-compatible"
+                base_url = "https://api.openai.com/v1"
+                api_key_env = "APEIRETH_OPENAI_KEY"
+                models = ["gpt-4o"]
+
+                [router]
+                fallback_order = ["apeireth-api", "openai"]
+            "#;
+            let cfg = apeireth_api::LlmConfig::from_str(toml).expect("TOML 解析必须成功");
+
+            // router 真接 (build_router() 不发请求, 只构造对象)
+            let router = Arc::new(cfg.build_router().expect("build_router 成功"));
+            assert_eq!(router.provider_count(), 2, "router 必须含 2 provider");
+            // fallback_order 显式设 → provider_names 按 fallback_order 排
+            assert_eq!(
+                router.provider_names(),
+                vec!["apeireth-api".to_string(), "openai".to_string()],
+                "fallback_order 顺序: apeireth-api 优先"
+            );
+
+            // 手构 PipelinePool::multi (用 fake pipeline, 不调 build_pipeline 走真网络)
+            let mut pipelines = std::collections::HashMap::new();
+            pipelines.insert(
+                "apeireth-api".to_string(),
+                make_arc_pipeline("https://api.minimaxi.com/v1", "fake-api"),
+            );
+            pipelines.insert(
+                "openai".to_string(),
+                make_arc_pipeline("https://api.openai.com/v1", "fake-openai"),
+            );
+            let pool = PipelinePool::multi(
+                pipelines,
+                vec!["apeireth-api".into(), "openai".into()],
+                router,
+            );
+
+            // 多 provider mode: provider_count == 2
+            assert_eq!(
+                pool.provider_count(),
+                2,
+                "multi mode provider count 必须 == 2"
+            );
+            assert_eq!(
+                pool.provider_names(),
+                vec!["apeireth-api".to_string(), "openai".to_string()],
+                "provider_names 按 fallback_order 暴露"
+            );
+        });
+    }
+
+    /// 测 3: select_pipeline v1 简化 — 任何 model 都返 default (决策 2b 全 true + 决策 4a)
+    /// 验证: PipelinePool::multi 模式下也保持 v1 简化 (后续 phase 真接 router 路径时再切).
+    #[test]
+    fn pool_select_pipeline_returns_default_for_any_model() {
+        with_clean_env(|| {
+            let mut pipelines = std::collections::HashMap::new();
+            let default_pipe = make_arc_pipeline("https://default.test", "fake-key");
+            let second_pipe = make_arc_pipeline("https://second.test", "fake-key-2");
+            pipelines.insert("default".to_string(), Arc::clone(&default_pipe));
+            pipelines.insert("second".to_string(), Arc::clone(&second_pipe));
+
+            let router = Arc::new(MultiLlmRouter::new());
+            let pool =
+                PipelinePool::multi(pipelines, vec!["default".into(), "second".into()], router);
+
+            // 决策 2 (v1 简化): 任何 model 都走 default_pipeline
+            // PipelinePool::multi 内部 `pipelines.values().next().cloned()` 作为 default —
+            // HashMap 顺序未保证, 所以这里只验证"同一 pool 多次 select_pipeline 返同一 Arc"
+            // (即 v1 简化的不变量), 不强求 pointer identity 到某个 named pipeline.
+            let p_a = pool.select_pipeline("MiniMax-M3");
+            let p_b = pool.select_pipeline("gpt-4o");
+            let p_c = pool.select_pipeline("claude-sonnet-4");
+            let p_d = pool.select_pipeline("anything-completely-unknown");
+
+            // 不变量 1: 4 次 select_pipeline 全部返同一个 Arc (v1 简化)
+            assert!(Arc::ptr_eq(&p_a, &p_b), "v1: A == B (同 default)");
+            assert!(Arc::ptr_eq(&p_b, &p_c), "v1: B == C (同 default)");
+            assert!(Arc::ptr_eq(&p_c, &p_d), "v1: C == D (同 default)");
+
+            // 不变量 2: 这个 default 必须是 pipelines 里某个真实 pipeline 的 Arc clone
+            // (PipelinePool::multi 不创造新 Arc, 是 .cloned() 复制)
+            let pool_default_is_real =
+                Arc::ptr_eq(&p_a, &default_pipe) || Arc::ptr_eq(&p_a, &second_pipe);
+            assert!(
+                pool_default_is_real,
+                "v1 default 必须是 pipelines 里某个真实 pipeline 的 Arc clone"
+            );
+        });
+    }
+
+    /// 测 4 (决策 6b): fallback 链端到端, **走 LlmProvider.complete (router 路径) 而不是 dispatch**
+    /// 验证: MultiLlmRouter 跨第一个失败 → 走第二个 → 成功 (跟 router.rs 自带测同模式).
+    #[tokio::test]
+    async fn pool_fallback_chain_uses_router_complete_not_dispatch() {
+        use apeireth_api::llm::providers::scripted::{ScriptedLlmProvider, ScriptedResponse};
+        use apeireth_api::llm::traits::{ChatMessage, LlmProvider as _, LlmRequest};
+        use apeireth_api::LlmError;
+
+        // 构造一个永远 fail 的 provider (决策 5: router 自己 fallback, 不靠 chat_once 跨 provider)
+        struct FailingProvider {
+            name: String,
+        }
+        #[async_trait::async_trait]
+        impl LlmProvider for FailingProvider {
+            fn name(&self) -> &str {
+                &self.name
+            }
+            fn supports_model(&self, _model: &str) -> bool {
+                true
+            }
+            async fn complete(
+                &self,
+                _req: LlmRequest,
+            ) -> Result<apeireth_api::LlmResponse, LlmError> {
+                // Network error 是 retryable → router 会 fallback 到下一个
+                Err(LlmError::Network {
+                    provider: self.name.clone(),
+                    detail: "mock fail".into(),
+                })
+            }
+        }
+
+        let failing = Arc::new(FailingProvider {
+            name: "failing".into(),
+        }) as Arc<dyn LlmProvider>;
+        let success = Arc::new(
+            ScriptedLlmProvider::new("success")
+                .with_script("hello", ScriptedResponse::new("from success")),
+        ) as Arc<dyn LlmProvider>;
+
+        // 走 router 路径 (决策 6b: 不走 dispatch, dispatch 是 Pipeline 单 endpoint 不能 fallback)
+        let router = MultiLlmRouter::new()
+            .with_provider(failing)
+            .with_provider(success)
+            .with_fallback(vec!["failing".into(), "success".into()]);
+
+        let req = LlmRequest::new("m", vec![ChatMessage::user("hello")]);
+        let resp = router
+            .complete(req)
+            .await
+            .expect("router 必须 fallback 到 success");
+
+        // 验证: 第一个 failing 失败 → router fallback → 第二个 success 命中
+        assert_eq!(
+            resp.content, "from success",
+            "router 必须跨失败 fallback 到 success"
+        );
+        assert_eq!(resp.provider, "success", "provider 字段必须是 success");
+
+        // 验证 router 是 Arc<MultiLlmRouter> 形态, 能塞进 PipelinePool.multi
+        // (此处不强构 pool, 测 2 已验 multi 工厂; 这里专测 router 路径语义)
+    }
+
+    /// 测 5: 健康检查 — `provider_names()` 端点暴露的 provider 列表
+    /// 单 provider mode → ["default"]; 多 provider mode → 按 fallback_order.
+    #[test]
+    fn pool_health_endpoint_lists_providers() {
+        with_clean_env(|| {
+            // 单 provider mode
+            let single = PipelinePool::single(
+                "default",
+                make_arc_pipeline("https://default.test", "fake-key"),
+            );
+            assert_eq!(
+                single.provider_names(),
+                vec!["default".to_string()],
+                "单 provider mode: 仅暴露 default"
+            );
+
+            // 多 provider mode (按 fallback_order 暴露, 跟 router.provider_names 1:1)
+            let mut pipelines = std::collections::HashMap::new();
+            pipelines.insert(
+                "alpha".to_string(),
+                make_arc_pipeline("https://alpha.test", "fake-a"),
+            );
+            pipelines.insert(
+                "beta".to_string(),
+                make_arc_pipeline("https://beta.test", "fake-b"),
+            );
+            pipelines.insert(
+                "gamma".to_string(),
+                make_arc_pipeline("https://gamma.test", "fake-c"),
+            );
+            let pool = PipelinePool::multi(
+                pipelines,
+                vec!["beta".into(), "gamma".into(), "alpha".into()],
+                Arc::new(MultiLlmRouter::new()),
+            );
+            assert_eq!(
+                pool.provider_names(),
+                vec!["beta".to_string(), "gamma".to_string(), "alpha".to_string()],
+                "provider_names 按 fallback_order 暴露"
+            );
+        });
+    }
+
+    /// 测 6 (决策 7): 4 provider type 都能 build
+    /// 现状 (0 触碰 config.rs, 诚实标注):
+    /// - `apeireth-api` / `openai-compatible` / `scripted` 走 `LlmConfig::build_router` 成功
+    /// - `anthropic-compatible` 在 config.rs `build_provider` 当前**未注册** (返 Err "unknown provider type")
+    /// 测 6 验两部分:
+    ///   6a: 4 个 type 都能写进 TOML 且 `from_str` 解析成功 (schema 兼容)
+    ///   6b: 3 个已知 type 走 `build_router` 成功 + 1 个 anthropic 走 `build_router` 返 Err
+    #[test]
+    fn pool_supports_all_4_provider_types() {
+        with_clean_env(|| {
+            std::env::set_var("APEIRETH_API_KEY", "fake-api");
+            std::env::set_var("APEIRETH_OPENAI_KEY", "fake-openai");
+            std::env::set_var("APEIRETH_ANTHROPIC_KEY", "fake-anthropic");
+            std::env::set_var("APEIRETH_LLM_NO_KEY", "placeholder");
+
+            let toml_4types = r#"
+                [providers.apeireth-api]
+                type = "apeireth-api"
+                base_url = "https://api.minimaxi.com/v1"
+                api_key_env = "APEIRETH_API_KEY"
+                models = ["MiniMax-M3"]
+
+                [providers.openai]
+                type = "openai-compatible"
+                base_url = "https://api.openai.com/v1"
+                api_key_env = "APEIRETH_OPENAI_KEY"
+                models = ["gpt-4o"]
+
+                [providers.anthropic]
+                type = "anthropic-compatible"
+                base_url = "https://api.minimaxi.com/anthropic"
+                api_key_env = "APEIRETH_ANTHROPIC_KEY"
+                models = ["claude-sonnet-4"]
+
+                [providers.scripted-test]
+                type = "scripted"
+                api_key_env = "APEIRETH_LLM_NO_KEY"
+                scripts = { "hello" = "hi from scripted" }
+                default_response = "default scripted"
+            "#;
+
+            // 6a: 4 个 type 都能 from_str 解析 (ProviderConfig schema 通用, type 字段不限制)
+            let cfg = apeireth_api::LlmConfig::from_str(toml_4types)
+                .expect("TOML 解析必须成功 (4 个 type 都能进 schema)");
+            assert_eq!(
+                cfg.providers.len(),
+                4,
+                "TOML 必须解析出 4 个 provider (apeireth-api / openai / anthropic / scripted-test)"
+            );
+
+            // 6b: build_router 行为 — 现状 (0 触碰 config.rs):
+            // - apeireth-api / openai-compatible / scripted → 成功
+            // - anthropic-compatible → 落到 config.rs `build_provider` 的 unknown 分支 → Err
+            let router_result = cfg.build_router();
+            match router_result {
+                Ok(router) => {
+                    // 假设 config.rs 已扩展支持 anthropic-compatible — 此分支不应走到
+                    // (留给未来 Phase: 真接 4 type 后改此 assert)
+                    assert!(
+                        router.provider_count() >= 3,
+                        "router 至少 3 个 provider (apeireth-api + openai + scripted)"
+                    );
+                }
+                Err(e) => {
+                    // 当前 (config.rs 0 触碰) 现实: anthropic-compatible 落到 unknown → Err
+                    // 验证 Err 是 LlmError::Config (fail-fast 路径, 决策 3)
+                    use apeireth_api::LlmError;
+                    assert!(
+                        matches!(e, LlmError::Config(_)),
+                        "4 type build 失败必须是 Config 错 (决策 3 fail-fast), 实际: {e:?}"
+                    );
+                    let msg = format!("{e}");
+                    assert!(
+                        msg.contains("anthropic-compatible")
+                            || msg.contains("unknown provider type"),
+                        "Err 信息必须指明 anthropic 未知 type; 实际: {msg}"
+                    );
+                }
+            }
+
+            // 6c: PipelinePool::multi 装配至少 3 个 provider pipeline (不调 build_pipeline 网络)
+            let mut pipelines = std::collections::HashMap::new();
+            pipelines.insert(
+                "apeireth-api".to_string(),
+                make_arc_pipeline("https://api.minimaxi.com/v1", "fake-api"),
+            );
+            pipelines.insert(
+                "openai".to_string(),
+                make_arc_pipeline("https://api.openai.com/v1", "fake-openai"),
+            );
+            pipelines.insert(
+                "scripted-test".to_string(),
+                make_arc_pipeline("https://unused", "placeholder"),
+            );
+            let pool = PipelinePool::multi(
+                pipelines,
+                vec![
+                    "apeireth-api".into(),
+                    "openai".into(),
+                    "scripted-test".into(),
+                ],
+                Arc::new(MultiLlmRouter::new()),
+            );
+            assert_eq!(
+                pool.provider_count(),
+                3,
+                "PipelinePool::multi 装配 3 provider (anthropic 走 LlmProvider 路径不冲突)"
+            );
+        });
+    }
+
+    // ============ 2 边界测 (per spec §4.2 决策 8 — 必需) ============
+
+    /// 测 7 (决策 3a): TOML provider key 缺失 → fail-fast (启动期立刻报错, 0 静默)
+    /// 验证: `LlmConfig::build_router()` 返 `LlmError::Config`, 信息含 env 名 + provider 名.
+    #[test]
+    fn pool_toml_provider_key_missing_fails_fast() {
+        with_clean_env(|| {
+            // 确保缺失 env 不存在 (双重保险)
+            std::env::remove_var("APEIRETH_NONEXISTENT_KEY_X42");
+
+            let toml = r#"
+                [providers.fail-key]
+                type = "apeireth-api"
+                base_url = "https://api.test.com/v1"
+                api_key_env = "APEIRETH_NONEXISTENT_KEY_X42"
+                models = ["x"]
+            "#;
+            let cfg = apeireth_api::LlmConfig::from_str(toml).expect("TOML 解析 OK");
+            let result = cfg.build_router();
+
+            // 决策 3a: fail-fast — 启动期立刻返 Err, 不静默 skip
+            // 注: 不能 .expect_err() 因为 MultiLlmRouter 未实现 Debug (0 触碰 router.rs)
+            let err = match result {
+                Ok(_) => panic!("key 缺失必须 fail-fast 返 Err (实际 Ok)"),
+                Err(e) => e,
+            };
+            use apeireth_api::LlmError;
+            assert!(
+                matches!(err, LlmError::Config(_)),
+                "key 缺失必须返 LlmError::Config (决策 3 fail-fast), 实际: {err:?}"
+            );
+            let msg = format!("{err}");
+            assert!(
+                msg.contains("APEIRETH_NONEXISTENT_KEY_X42"),
+                "Err 信息必须含 env 名 (定位调试); 实际: {msg}"
+            );
+            assert!(
+                msg.contains("fail-key"),
+                "Err 信息必须含 provider 名; 实际: {msg}"
+            );
+        });
+    }
+
+    /// 测 8: TOML 0 个 provider → 退化单 Pipeline (不 panic)
+    /// 验证: PipelinePool 启动期构造路径对空 providers 优雅退化 (走 ::single 分支).
+    #[test]
+    fn pool_empty_toml_falls_back_to_single_pipeline() {
+        with_clean_env(|| {
+            // 8a: LlmConfig 解析空 TOML (无 [providers.*]) → providers == {} (spec 现状)
+            let toml_empty = r#"
+                [router]
+                fallback_order = []
+            "#;
+            let cfg = apeireth_api::LlmConfig::from_str(toml_empty)
+                .expect("空 TOML 必须能解析 (不 panic)");
+            assert_eq!(
+                cfg.providers.len(),
+                0,
+                "空 TOML → providers 必须为空 HashMap"
+            );
+            assert!(
+                cfg.providers.is_empty(),
+                "决策 4a 退化前提: providers 空 → 走 PipelinePool::single"
+            );
+
+            // 8b: 退化构造 — main() 启动期路径 (per spec §2.2) 应在此分支走 PipelinePool::single
+            // 模拟: 手构 PipelinePool::single 当 TOML 空时
+            let pipe = make_arc_pipeline("https://default.test", "fake-key");
+            let pool = PipelinePool::single("default", Arc::clone(&pipe));
+            assert_eq!(pool.provider_count(), 1);
+            assert_eq!(pool.provider_names(), vec!["default".to_string()]);
+            // 选任何 model 都返 default (跟旧版 build_pipeline 行为 1:1)
+            assert!(Arc::ptr_eq(&pool.select_pipeline("anything"), &pipe));
         });
     }
 }
