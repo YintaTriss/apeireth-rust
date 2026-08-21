@@ -167,12 +167,12 @@ impl crate::vm_sandbox::VMSandbox for LibkrunVMSandbox {
     /// vs Phase 1 stub 路径 (默认 build, 1:1 兼容).
     fn start(
         &self,
-        config: &crate::vm_sandbox::VMSandboxConfig,
+        _config: &crate::vm_sandbox::VMSandboxConfig,
     ) -> Result<crate::vm_sandbox::VMSandboxHandle, String> {
         // cfg-gated 真接路径 (--features libkrun + Linux/macOS 真接)
         #[cfg(all(feature = "libkrun", any(target_os = "linux", target_os = "macos")))]
         {
-            return real_start(config);
+            return real_start(_config);
         }
         // 默认 build (feature 关闭 或 Windows) - Phase 1 stub
         #[cfg(not(all(feature = "libkrun", any(target_os = "linux", target_os = "macos"))))]
