@@ -167,7 +167,7 @@ impl crate::vm_sandbox::VMSandbox for LibkrunVMSandbox {
     /// vs Phase 1 stub 路径 (默认 build, 1:1 兼容).
     fn start(
         &self,
-        _config: &crate::vm_sandbox::VMSandboxConfig,
+        config: &crate::vm_sandbox::VMSandboxConfig,
     ) -> Result<crate::vm_sandbox::VMSandboxHandle, String> {
         // cfg-gated 真接路径 (--features libkrun + Linux/macOS 真接)
         #[cfg(all(feature = "libkrun", any(target_os = "linux", target_os = "macos")))]
@@ -247,7 +247,13 @@ fn real_start(
         // 0.9.7 krun_set_kernel 5 args: ctx_id, kernel_path, kernel_format, initramfs, cmdline
         //   0 装期: kernel_path=cstr, kernel_format=0u32 (raw), initramfs=null (无), cmdline=null (无)
         let rc = unsafe {
-            libkrun_sys::krun_set_kernel(ctx_id, cstr.as_ptr(), 0u32, std::ptr::null::<i8>(), std::ptr::null::<i8>())
+            libkrun_sys::krun_set_kernel(
+                ctx_id,
+                cstr.as_ptr(),
+                0u32,
+                std::ptr::null::<i8>(),
+                std::ptr::null::<i8>(),
+            )
         };
         if rc != 0 {
             unsafe { libkrun_sys::krun_free_ctx(ctx_id) };
