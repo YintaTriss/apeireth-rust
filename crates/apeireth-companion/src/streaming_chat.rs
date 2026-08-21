@@ -345,10 +345,7 @@ impl StreamingChat {
             _ => return Ok(events),
         };
 
-        let delta = match choice.get("delta") {
-            Some(d) => d,
-            None => return Ok(events),
-        };
+        let Some(delta) = choice.get("delta") else { return Ok(events) };
 
         // 处理 `delta.content` (跨 chunk 切 CoT).
         if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
@@ -659,7 +656,7 @@ impl StreamingChat {
     // ============================================================
 
     /// emit ToolCall 事件 (每条 tool_call 一条事件), 并返回.
-    fn emit_tool_calls(&mut self) -> Vec<SseEvent> {
+    fn emit_tool_calls(&self) -> Vec<SseEvent> {
         let mut out = Vec::with_capacity(self.tool_calls_acc.len());
         for tc in &self.tool_calls_acc {
             let id = tc

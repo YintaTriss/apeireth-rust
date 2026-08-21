@@ -1795,7 +1795,7 @@ impl LightGBMProvider {
         let out = result[0]
             .to_array_view::<f32>()
             .map_err(|e| format!("输出类型不匹配 f32: {e}"))?;
-        Ok(out[[0, 0]] as f64)
+        Ok(f64::from(out[[0, 0]]))
     }
 }
 
