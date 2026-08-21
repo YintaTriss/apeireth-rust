@@ -47,13 +47,13 @@
 | **GitHub PAT** | `C:\Users\<user>\GitHubtoken.txt` | (无 .gitignore, 因不在 workspace) | 主人本地管理, 不放 workspace |
 | **OpenAI API key** | `C:\Users\<user>\apikey-openai.txt` (建议) | `apikey-*.txt` | 多 provider 模式 |
 
-**为什么 GitHubtoken.txt 不在 .gitignore**: 它根本不在 workspace 目录里 (`C:\Users\31683\`), 不可能被 commit。.gitignore 只防 workspace 内的凭证。
+**为什么 GitHubtoken.txt 不在 .gitignore**: 它根本不在 workspace 目录里 (`C:\Users\<user>\`), 不可能被 commit。.gitignore 只防 workspace 内的凭证。
 
 ### 2.2 子代理读取凭证 (per task 流程)
 
 ```powershell
 # ✅ 正确: 读取后立刻清环境变量
-$key = (Get-Content C:\Users\31683\apikey-ultra.txt -Raw).Trim()
+$key = (Get-Content C:\Users\<user>\apikey-ultra.txt -Raw).Trim()
 $env:APEIRETH_API_KEY = $key
 # ... 用完立刻清:
 Remove-Item Env:APEIRETH_API_KEY
