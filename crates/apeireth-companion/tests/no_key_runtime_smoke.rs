@@ -171,12 +171,9 @@ fn http_post(port: u16, path: &str, body: Value) -> (u16, Value) {
 
 #[test]
 fn l3_no_key_runtime_smoke_full() {
-    let (mut guard, port) = match boot_no_key_server() {
-        Some(x) => x,
-        None => {
-            eprintln!("[L3] SKIP: companion_serve example binary not found (build examples first)");
-            return;
-        }
+    let Some((mut guard, port)) = boot_no_key_server() else {
+        eprintln!("[L3] SKIP: companion_serve example binary not found (build examples first)");
+        return;
     };
 
     // Wait for boot (Test 1: process/server boot without provider credential).

@@ -12,9 +12,15 @@ pub mod keyring;
 /// Cross-platform machine identity providers and detection.
 pub mod machine_id;
 mod organ_kani_proofs;
+/// Three-way conflict detection utility (BORROW: agentos-windows-recovery 2026-08-21).
+pub mod three_way;
 
 pub use keyring::*;
 pub use machine_id::{
     derive_id, detect as detect_machine_id, get_machine_id, hash_machine_id, MachineId,
     MachineIdError, MachineIdExport, MachineIdResult, MachineIdResultStd,
+};
+pub use three_way::{
+    detect, detect_with_force, ConflictDiff, DetectOutcome, FileEntry, FileScope, FileSnapshot,
+    ThreeWayComparable, ThreeWayConflict, ThreeWayError,
 };

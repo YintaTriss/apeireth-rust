@@ -510,3 +510,8 @@ mod tests {
 
 // R177: organ invariants (5 tests + 2 Kani)
 mod organ_kani_proofs;
+
+// R215 (2026-08-21): hash-chained append-only audit journal (BORROW-Jimmyxiao2009).
+// 0 装 PASS: 与 SQLite 主仲裁 (ArbitrationLog) 并行, 不动 canonical order, 仅作
+// audit 链 tamper-evidence (per journal.rs module docs §"What this crate adds").
+pub mod journal;

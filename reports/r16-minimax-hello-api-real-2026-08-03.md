@@ -8,7 +8,7 @@
 
 ## ✅ 主人真接通验证
 
-**主人给的 key**: \sk-cp-kug0t7Jik3-CLvvPauLHx8IjzwB9ANsnTFI_HXF9c4vhERO7gYqB6KOL4ldK3pdj2esU3EVaN6w4jl3z9fGUOwjLQz1EXzXjPATISo4BFMAbaEHOb8YRsUg\ (真实)
+**主人给的 key**: [REDACTED-sk-cp-...RsUg, 95 chars — 主人 2026-08-21 提示密钥已泄露, 待 revoke/rotate. 留形态占位. ] (真实)
 **base URL**: \https://api.minimaxi.com/v1\ (从官方文档确认: https://platform.minimaxi.com/docs/api-reference/text-openai-api)
 
 ## 🎉 hello_api 验收通过

@@ -10,7 +10,7 @@
 
 **之前 21:33-22:19 hello_api / serve 都 401** —— 不是 key 失效，是**主人发的 key 是脱敏版**：
 - 主人 21:33 发的: `sk-cp-…RsUg` (U+2026 省略号截断, 11 字符)
-- 真 key 在 commit `e7db839f` message 里: `sk-cp-kug0t7Jik3-CLvvPauLHx8IjzwB9ANsnTFI_HXF9c4vhERO7gYqB6KOL4ldK3pdj2esU3EVaN6w4jl3z9fGUOwjLQz1EXzXjPATISo4BFMAbaEHOb8YRsUg` (约 130 字符)
+- 真 key 在 commit `e7db839f` message 里: `[REDACTED-sk-cp-...RsUg, 95 chars — 主人 2026-08-21 提示密钥已泄露, 待 revoke/rotate.]` (约 130 字符)
 
 主人 21:41 说"你自己测"——我用 commit message 里提取的真 key 跑通了 minimaxi。
 

@@ -265,6 +265,32 @@ per Apache License 2.0 §4(d):
 
 本项目 (Apeireth) 站在以下开源项目和开源协议的肩膀上, 致以诚挚谢意:
 
+### 8.0 借鉴增量: Jimmyxiao2009 个人项目 (R215, 2026-08-21)
+
+> **来源**: <https://github.com/Jimmyxiao2009/> (用户个人项目)
+> **详细借鉴分析**: [`docs/04-internal/borrow-from-jimmyxiao2009.md`](docs/04-internal/borrow-from-jimmyxiao2009.md)
+> **本节**: 致谢性引用, 落地细节见上述文档
+
+| 借鉴 ID | 来源 | License | 借鉴模式 | 落点 | 状态 |
+|---------|------|---------|----------|------|------|
+| `BORROW-Jimmyxiao2009/agentos-windows-recovery-atomic-write-2026-08-21` | <https://github.com/Jimmyxiao2009/agentos-windows-recovery> | **MIT** | 原子写入模板 (`JsonSupport.WriteAtomic`) — `<target>.tmp-<uuid>` → rename, finally 清理 | `apeireth-host::atomic_write` | ✅ done |
+| `BORROW-Jimmyxiao2009/agentos-windows-recovery-fail-closed-2026-08-21` | 同上 | **MIT** | Fail-closed 三阶段模板 (`TransactionEngine.RollbackCore` + `MarkEvidenceFailure`) | `apeireth-sovereignty::fail_closed` | ✅ done |
+| `BORROW-Jimmyxiao2009/agentos-windows-recovery-hash-chained-journal-2026-08-21` | 同上 | **MIT** | Hash-chained audit journal (`TransactionJournal.cs` — `SHA256(seq ‖ timestamp ‖ eventType ‖ data ‖ prev_hash)` + Genesis) | `apeireth-arbitration::journal` | ✅ done |
+| `BORROW-Jimmyxiao2009/agentos-windows-recovery-journal-durability-2026-08-21` | 同上 | **MIT** | Journal durability 强化 (`BufWriter::flush` + `sync_all` + 父目录 fsync, 同款 `write_with_durability` 模式) | `apeireth-arbitration::journal::flush` + `append` | ✅ done |
+| `BORROW-Jimmyxiao2009/agentos-windows-recovery-three-way-conflict-2026-08-21` | 同上 | **MIT** | 三路冲突检测 (`FileSnapshotEngine.FindRollbackConflicts` — baseline / after / current) | `apeireth-host::three_way` (新 trait + FileScope impl) | ✅ done |
+| `BORROW-Jimmyxiao2009/AgentFlow-task-dag-lease-2026-08-21` | <https://github.com/Jimmyxiao2009/AgentFlow> | ⚠️ **无 LICENSE** (默认 all-rights-reserved) | Task DAG 租约 (`TaskDagScheduler` — 14 TaskState 状态机 + 15 分钟租约 + reap_expired 主动回收) | `apeireth-team-lead::lease` (新模块, RAII LeaseGuard) | ✅ done (设计思想, 0 代码复制) |
+| `BORROW-Jimmyxiao2009/apeireth-rust-fork-pr2-session_lifecycle-2026-08-21` | <https://github.com/Jimmyxiao2009/apeireth-rust> (fork) | **Apache-2.0** | 状态机 + `expected_rev` CAS 乐观并发 | `apeireth-memory::session_lifecycle` (fork 复制, 0 触碰 LOCKED migrations.rs) | ✅ done (in worktree `team/pr2-integration`) |
+| `BORROW-Jimmyxiao2009/apeireth-rust-fork-pr2-memory_governance-2026-08-21` | 同上 | **Apache-2.0** | forget ≠ purge 软删 + sidecar 表 (episodes 仍 append-only) | `apeireth-memory::memory_governance` | ✅ done (in worktree) |
+| `BORROW-Jimmyxiao2009/apeireth-rust-fork-pr2-agent_trace-memory-2026-08-21` | 同上 | **Apache-2.0** | 结构化 Agent 执行轨迹持久化 + 查询 | `apeireth-memory::agent_trace` | ✅ done (in worktree) |
+| `BORROW-Jimmyxiao2009/apeireth-rust-fork-pr2-packs-2026-08-21` | 同上 | **Apache-2.0** | PermissionPack 作用域授权 grant + 撤销 | `apeireth-companion::packs` | ✅ done (in worktree) |
+| `BORROW-Jimmyxiao2009/apeireth-rust-fork-gitignore-credentials-2026-08-21` | <https://github.com/Jimmyxiao2009/apeireth-rust> (fork, commit `4b230e3c`) | **Apache-2.0** | .gitignore 凭证保护 (apikey-ultra.txt + apikey-*.txt + *.git-credentials + Users*.git-credentials) | `.gitignore` (新增 4 行规则) | ✅ done |
+
+**License 合规**: MIT (agentos) + Apache-2.0 (fork) 全部入 OSS_NOTICE §8.0; AgentFlow 仅借鉴设计思想, 0 代码复制。
+
+**8 哲学锚穿透** (per 主仓 `09-anchor.md`): S-1 北极星 (3 项均服务 LLM 后端基地) / S-2 实事求是 (每个模块 0 装 PASS 标注完整) / S-3 质量工程化 (3 模块 24 测试全绿) / O-1 安全优先 (fail-closed 模板 + tamper-evident + 三路冲突) / O-2 前人肩上 (字段级移植 C# → Rust) / O-3 干到底 (一次性落地 + 测试 + 文档) / O-4 接手 (顶部 //! + 用法示例) / O-5 不假装 (错误类型完整 + "什么没做"明示)。
+
+**未借鉴** (本次): Yanshuai-AI / OnDeviceAI 系列 (C# UWP/D3D11 Windows 独占, 跨平台 Rust 适配面低); AgentFlow 仅借鉴思想 (无 LICENSE, **0 代码复制**, 全 Rust 重新实现); apeireth-rust fork: 全量 PR #2 (架构不兼容 + LOCKED 触碰 + 重复造轮子 → 改为 selective cherry-pick 4 个纯 Rust module, 跳过 companion_serve 改造 + frontend 重写 + runtime_capabilities 重复实现 + migrations LOCKED 触碰)。
+
 ### 8.1 借鉴 7/11 真实施 (本 OSS_NOTICE.md §1 详述)
 
 - **clap-rs/clap 4.6.6** (Apache-2.0 + MIT) — CLI derive 模式, R125-2 ✅ done

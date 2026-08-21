@@ -221,6 +221,23 @@ imports.lock
 audit-audit.stderr.txt
 sbom-cyclonedx.stderr.txt
 
+# R215 BORROW (2026-08-21, from Jimmyxiao2009/apeireth-rust fork 4b230e3c):
+# Companion provider credential files (本地真实 API key, 严禁入库)
+# companion_serve 启动读取 apikey-ultra.txt (用户本地管理的 secret).
+# 规则精确: 仅忽略 apikey-ultra.txt + apikey-*.txt (连字符变体),
+# 不误伤将来可能的 apikey.example.txt (点号分隔规范示例).
+apikey-ultra.txt
+apikey-*.txt
+# Generic git credential store (e.g. .git-credentials / Users*.git-credentials).
+*.git-credentials
+Users*.git-credentials
+# R215 续: 报告文件名含 "real-key" / "real-llm" / "minimax-hello" 的, 默认 ignore (防御性):
+# 历史有 3 个 reports/ 文件写入了完整 MiniMax API key, 已 redact 留形态占位.
+# 后续同命名规范报告不再入库 (避免再泄露). git filter-repo 留后续批.
+reports/*real-key*
+reports/*real-llm*
+reports/*minimax-hello*
+
 # TP13 #31 (backlog #32): crates/apeireth-memory.db{,-shm,-wal} WAL 泄漏 (R15 期间 486KB 进源码树)
 # 未跟踪但防御性 ignore, 防止日后 cargo run/init 误入
 crates/*.db

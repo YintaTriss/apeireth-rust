@@ -733,3 +733,27 @@ pub mod approval_bridge;
 pub use approval_bridge::{
     ApprovalBridge, ApprovalBridgeError, ApprovalRequest, ApprovalResponse, InProcessBridge,
 };
+
+// ============================================================================
+// Task DAG Lease (BORROW: AgentFlow task state machine, 2026-08-21)
+// ============================================================================
+//
+// **借鉴 ID**: `BORROW-Jimmyxiao2009/AgentFlow-task-dag-lease-2026-08-21`
+// **License**: AgentFlow 无 LICENSE (默认 all-rights-reserved); 仅借鉴设计思想, 0 行代码复制.
+//
+// **职责**: Task 分配时附 lease (含 timeout), Scheduler 主动循环 (每分钟一次) reap 到期,
+// 强制标记为 Failed (非 Ready — 关键不变量, 防止破坏状态机).
+// **LOCATION 决策**: 作为 team-lead 子模块 (非独立 crate) — lease 是 Orchestrator 内部组件,
+// 与 `Orchestrator` trait 紧耦合; 其他 crate 后续若有需求可通过 pub use re-export.
+//
+// **不假装** (P1 backlog):
+// - in-memory only (重启后 lease 丢失)
+// - reap_expired 只返回 task_id, 不自动改 state (caller 决定)
+// - sync API (std::sync::Mutex); 改 async 需 Orchestrator 一起迁移
+//
+// 详见 src/lease.rs 模块头 + docs/04-internal/design-task-lease-2026-08-21.md.
+pub mod lease;
+pub use lease::{
+    try_acquire, InMemoryLeaseManager, LeaseError, LeaseGuard, LeaseManager, TaskId, TaskLease,
+    TaskState,
+};

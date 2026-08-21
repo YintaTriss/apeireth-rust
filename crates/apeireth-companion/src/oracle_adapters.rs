@@ -1483,7 +1483,7 @@ mod tp25_tests {
         // φ ≈ 0 (常数差分序列无自相关)
         // 预测: diff 长期 ≈ mean = 2.0, 原尺度预测 ≈ 末尾值 + 2*step
         let p = ArimaPredictor::default();
-        let series: Vec<f64> = (0..10).map(|t| 1.0 + 2.0 * t as f64).collect();
+        let series: Vec<f64> = (0..10).map(|t| 1.0 + 2.0 * f64::from(t)).collect();
         let out = p.predict(&series, 3).unwrap();
         // 期望: t=10 → 21, t=11 → 23, t=12 → 25 (线性外推 ±少量噪声)
         assert!(
@@ -1543,7 +1543,7 @@ mod tp25_tests {
     fn arima_predict_with_ci_returns_2_arrays() {
         use super::arima_predict_with_ci;
         let series: Vec<f64> = (0..20)
-            .map(|t| 100.0 + t as f64 + (t as f64 * 0.5).sin())
+            .map(|t| 100.0 + f64::from(t) + (f64::from(t) * 0.5).sin())
             .collect();
         let (pred, ci) = arima_predict_with_ci(&series, 4).unwrap();
         assert_eq!(pred.len(), 4);
@@ -1594,7 +1594,7 @@ mod tp25_tests {
         use super::LightGBMProvider;
         let p = LightGBMProvider::default();
         assert_eq!(p.provider(), "lightgbm-noop");
-        let series: Vec<f64> = (0..100).map(|t| 100.0 + (t as f64 / 5.0).sin()).collect();
+        let series: Vec<f64> = (0..100).map(|t| 100.0 + (f64::from(t) / 5.0).sin()).collect();
         let err = p.predict(&series, 3).unwrap_err();
         assert!(matches!(err, AdapterError::Degraded(_)), "{err:?}");
         let msg = err.to_string();
@@ -1669,7 +1669,7 @@ mod tp25_tests {
         }
         let p = LightGBMProvider::from_onnx_file(fixture, 60);
         assert_eq!(p.provider(), "lightgbm-onnx");
-        let series: Vec<f64> = (0..100).map(|t| 100.0 + (t as f64 / 5.0).sin()).collect();
+        let series: Vec<f64> = (0..100).map(|t| 100.0 + (f64::from(t) / 5.0).sin()).collect();
         let one = p.predict(&series, 1).expect("1-step 应成功");
         assert_eq!(one.len(), 1);
         assert!(one[0].is_finite(), "1-step 输出应 finite, 实测 {}", one[0]);
@@ -1690,7 +1690,7 @@ mod tp25_tests {
         }
         let p = LightGBMProvider::from_onnx_file(fixture, 60);
         assert_eq!(p.provider(), "lightgbm-onnx");
-        let series: Vec<f64> = (0..100).map(|t| 100.0 + (t as f64 / 5.0).sin()).collect();
+        let series: Vec<f64> = (0..100).map(|t| 100.0 + (f64::from(t) / 5.0).sin()).collect();
         let (pred, ci) = lightgbm_predict_with_ci(&series, 5).expect("N-step+CI");
         assert_eq!(pred.len(), 5);
         assert_eq!(ci.len(), 5);

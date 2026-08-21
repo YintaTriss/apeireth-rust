@@ -25,6 +25,17 @@ tracing = "0.1"
 [dev-dependencies]
 tempfile = "3"
 tokio = { workspace = true, features = ["full"] }
+apeireth-host = { path = "../apeireth-host" }
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
+
+[[example]]
+name = "smoke_journal"
+# Borrow smoke test: hash-chained journal + atomic_write end-to-end.
+# 验证 3 项 P0 借鉴 (atomic_write / fail_closed / journal) 可组装运行.
+
+[[example]]
+name = "smoke_real_llm"
+# 真 LLM 集成 smoke: 真调 MiniMax API + 写 journal + 验链.
 
 [lints]
 workspace = true

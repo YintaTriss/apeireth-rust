@@ -11,7 +11,7 @@
 主人之前发的 `sk-cp-…RsUg` (U+2026 省略号) **不是脱敏版**，是 **OpenClaw 平台自动截断** 的！真实 key 在 `.openclaw\apikey.txt` 里，**完整 95 字符**：
 
 ```
-sk-cp-kug0t7Jik3-CLvvPauLHx8IjzwB9ANsnTFI_HXF9c4vhERO7gYqB6KOL4ldK3pdj2esU3EVaN6w4jl3z9fGUOwjLQz1EXzXjPATISo4BFMAbaEHOb8YRsUg
+[REDACTED-sk-cp-...RsUg, 95 chars — 主人 2026-08-21 提示密钥已泄露, 待 revoke/rotate. 历史报告原值见 R215 audit git log commit diff. 0 装 PASS: 完整 key 从报告移除, 留形态占位. ]
 ```
 
 `apikey.txt` 同时含 minimaxi 文档 URL：`https://platform.minimaxi.com/docs/api-reference/api-overview`
