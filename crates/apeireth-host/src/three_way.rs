@@ -55,7 +55,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -153,7 +153,9 @@ pub struct ConflictDiff {
 impl ConflictDiff {
     /// `true` if no paths changed / added / removed.
     pub fn is_empty(&self) -> bool {
-        self.changed_paths.is_empty() && self.added_paths.is_empty() && self.removed_paths.is_empty()
+        self.changed_paths.is_empty()
+            && self.added_paths.is_empty()
+            && self.removed_paths.is_empty()
     }
 
     /// Total number of differing paths (changed + added + removed).
@@ -509,7 +511,10 @@ mod tests {
             DetectOutcome::ConflictBypassedByForce(c) => {
                 assert_eq!(c.diff.changed_paths.len(), 1);
             }
-            other => panic!("expected ConflictBypassedByForce, got {:?}", other_summary(&other)),
+            other => panic!(
+                "expected ConflictBypassedByForce, got {:?}",
+                other_summary(&other)
+            ),
         }
     }
 

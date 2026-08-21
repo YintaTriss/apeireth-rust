@@ -25,10 +25,7 @@ fn now_ms() -> i64 {
 /// or unreadable. Per 0 装 PASS, we never error out on this — the smoke
 /// test just uses a fake response instead.
 fn load_api_key() -> Option<String> {
-    let candidates = [
-        "C:\\Users\\31683\\apikey-ultra.txt",
-        "./apikey-ultra.txt",
-    ];
+    let candidates = ["C:\\Users\\31683\\apikey-ultra.txt", "./apikey-ultra.txt"];
     for path in &candidates {
         if let Ok(s) = std::fs::read_to_string(path) {
             let key = s.trim().to_string();

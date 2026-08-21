@@ -163,8 +163,7 @@ fn main() {
             apeireth_arbitration::journal::GENESIS_HASH,
         ),
     };
-    let synth_e2_hash =
-        JournalEntry::compute_hash(2, 2, "x", "b", &synth_e1.hash);
+    let synth_e2_hash = JournalEntry::compute_hash(2, 2, "x", "b", &synth_e1.hash);
     let synth_e2 = JournalEntry {
         seq: 2,
         timestamp_ms: 2,
@@ -175,7 +174,10 @@ fn main() {
     };
     let report3 = verify_chain(&[(1usize, synth_e1), (2usize, synth_e2)]).expect("synth verify");
     assert_eq!(report3.entries_checked, 2);
-    println!("[7] synthetic verify_chain: {} entries OK", report3.entries_checked);
+    println!(
+        "[7] synthetic verify_chain: {} entries OK",
+        report3.entries_checked
+    );
 
     // 8. Sanity check: write_atomic on raw bytes (round-trip).
     let raw_path = tmp.join("raw.bin");

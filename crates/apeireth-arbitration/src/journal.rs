@@ -304,11 +304,14 @@ impl HashChainedJournal {
                 .write_all(line.as_bytes())
                 .and_then(|_| writer.write_all(b"\n"))
                 .map_err(|source| JournalError::io(&self.path, source))?;
-            writer.flush().map_err(|source| JournalError::io(&self.path, source))?;
+            writer
+                .flush()
+                .map_err(|source| JournalError::io(&self.path, source))?;
             // R215 强化: per-entry fsync (与 flush() 同款模式, 粒度更细,
             // 每写一条 entry 就 fsync 一次, 牺牲吞吐换强一致)
             let f: &File = writer.get_ref();
-            f.sync_all().map_err(|source| JournalError::io(&self.path, source))?;
+            f.sync_all()
+                .map_err(|source| JournalError::io(&self.path, source))?;
         }
 
         self.next_seq += 1;
@@ -326,10 +329,13 @@ impl HashChainedJournal {
     /// 调用者无需再用 `apeireth_host::atomic_write::write_with_durability` 包一层。
     pub fn flush(&mut self) -> Result<(), JournalError> {
         if let Some(writer) = self.writer.as_mut() {
-            writer.flush().map_err(|source| JournalError::io(&self.path, source))?;
+            writer
+                .flush()
+                .map_err(|source| JournalError::io(&self.path, source))?;
             // R215 强化: fsync the underlying file (借用 atomic_write 的 durability 模式)
             let f: &File = writer.get_ref();
-            f.sync_all().map_err(|source| JournalError::io(&self.path, source))?;
+            f.sync_all()
+                .map_err(|source| JournalError::io(&self.path, source))?;
             // best-effort parent dir fsync (Linux/macOS, 防 crash 后父目录 inode 丢)
             if let Some(parent) = self.path.parent() {
                 if let Ok(dir) = std::fs::File::open(parent) {
@@ -542,7 +548,10 @@ mod tests {
         assert_eq!(report.entries_checked, 2);
         assert_eq!(report.first_seq, 1);
         assert_eq!(report.last_seq, 2);
-        assert_eq!(report.last_hash.as_deref(), Some(entries[1].1.hash.as_str()));
+        assert_eq!(
+            report.last_hash.as_deref(),
+            Some(entries[1].1.hash.as_str())
+        );
     }
 
     #[test]
@@ -689,7 +698,8 @@ mod tests {
         // acceptable; both prove tampering is detected.
         let err = j4.verify().unwrap_err();
         match err {
-            JournalError::ChainBroken { seq: 2, .. } | JournalError::ChainBroken { seq: 3, .. } => {}
+            JournalError::ChainBroken { seq: 2, .. } | JournalError::ChainBroken { seq: 3, .. } => {
+            }
             other => panic!("expected ChainBroken at seq 2 or 3, got {other:?}"),
         }
     }
@@ -732,13 +742,20 @@ mod tests {
         j.flush().expect("flush must succeed with fsync");
         // 验证: 末尾 entry 已落盘 (append 已 fsync, flush 是冗余的 fsync, 但应成功)
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(raw.contains("\"event_type\":\"a\""), "entry a should be on disk");
-        assert!(raw.contains("\"event_type\":\"b\""), "entry b should be on disk");
+        assert!(
+            raw.contains("\"event_type\":\"a\""),
+            "entry a should be on disk"
+        );
+        assert!(
+            raw.contains("\"event_type\":\"b\""),
+            "entry b should be on disk"
+        );
         assert_eq!(j.next_seq(), 3);
 
         // 再 append 一条 + flush, 验证 flush 本身(非 append) 走的 fsync 路径
         j.append("c", "3", 3).unwrap();
-        j.flush().expect("second flush must also succeed with fsync");
+        j.flush()
+            .expect("second flush must also succeed with fsync");
         let raw2 = std::fs::read_to_string(&path).unwrap();
         assert!(
             raw2.contains("\"event_type\":\"c\""),
