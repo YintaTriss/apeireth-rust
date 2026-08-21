@@ -25,7 +25,22 @@ fn now_ms() -> i64 {
 /// or unreadable. Per 0 装 PASS, we never error out on this — the smoke
 /// test just uses a fake response instead.
 fn load_api_key() -> Option<String> {
-    let candidates = ["C:\\Users\\31683\\apikey-ultra.txt", "./apikey-ultra.txt"];
+    // Path candidates use env var + cwd-relative to avoid username PII:
+    // 1. $APEIRETH_API_KEY_FILE env var (preferred, no hardcoded user path)
+    // 2. $HOME/apikey-ultra.txt (Unix convention)
+    // 3. $USERPROFILE/apikey-ultra.txt (Windows convention)
+    // 4. ./apikey-ultra.txt (cwd-relative, fallback)
+    let home_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    let mut candidates: Vec<String> = Vec::new();
+    if let Ok(p) = std::env::var("APEIRETH_API_KEY_FILE") {
+        candidates.push(p);
+    }
+    if !home_dir.is_empty() {
+        candidates.push(format!("{}/apikey-ultra.txt", home_dir));
+    }
+    candidates.push("./apikey-ultra.txt".to_string());
     for path in &candidates {
         if let Ok(s) = std::fs::read_to_string(path) {
             let key = s.trim().to_string();
