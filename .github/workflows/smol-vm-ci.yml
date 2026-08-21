@@ -50,6 +50,12 @@ jobs:
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      # keyring → dbus-secret-service → libdbus-sys 需要系统库
+      - name: "Install system deps (Linux: libdbus)"
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+        # macos 实际用 brew install pkg-config dbus, 但 CI macos-latest 默认带 dbus
+
       - name: Cache cargo registry + target
         uses: actions/cache@v4
         with:
