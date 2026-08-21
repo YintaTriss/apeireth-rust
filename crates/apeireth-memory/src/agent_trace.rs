@@ -161,7 +161,8 @@ fn row_to_span(row: &rusqlite::Row<'_>) -> rusqlite::Result<TraceSpan> {
     let kind_str: String = row.get("kind")?;
     let status_str: String = row.get("status")?;
     let attrs_str: String = row.get("attributes_json")?;
-    let attributes: serde_json::Value = serde_json::from_str(&attrs_str).unwrap_or(serde_json::Value::Null);
+    let attributes: serde_json::Value =
+        serde_json::from_str(&attrs_str).unwrap_or(serde_json::Value::Null);
     Ok(TraceSpan {
         span_id: row.get("span_id")?,
         trace_id: row.get("trace_id")?,
@@ -405,8 +406,13 @@ mod tests {
         let spans = s.list_trace_spans("t1").unwrap();
         assert_eq!(spans.len(), 4);
         // parent-child 关联
-        assert!(spans.iter().any(|sp| sp.span_id == mem_id && sp.parent_span_id.as_deref() == Some(&root_id)));
-        assert!(spans.iter().any(|sp| sp.kind == TraceSpanKind::Tool && sp.parent_span_id.as_deref() == Some(&mem_id)));
+        assert!(spans
+            .iter()
+            .any(|sp| sp.span_id == mem_id && sp.parent_span_id.as_deref() == Some(&root_id)));
+        assert!(spans
+            .iter()
+            .any(|sp| sp.kind == TraceSpanKind::Tool
+                && sp.parent_span_id.as_deref() == Some(&mem_id)));
         assert!(s.applied_migrations().unwrap().contains(&7));
     }
 
@@ -416,7 +422,9 @@ mod tests {
         let root = root_span("t1");
         let root_id = root.span_id.clone();
         s.put_trace_span(&root).unwrap();
-        let ended = s.end_trace_span(&root_id, TraceSpanStatus::Succeeded, Some("响应完成")).unwrap();
+        let ended = s
+            .end_trace_span(&root_id, TraceSpanStatus::Succeeded, Some("响应完成"))
+            .unwrap();
         assert_eq!(ended.status, TraceSpanStatus::Succeeded);
         assert!(ended.ended_at.is_some());
         assert_eq!(ended.summary.as_deref(), Some("响应完成"));
@@ -429,7 +437,9 @@ mod tests {
         let root = root_span("t1");
         let rid = root.span_id.clone();
         s.put_trace_span(&root).unwrap();
-        let ended = s.end_trace_span(&rid, TraceSpanStatus::Failed, Some("工具超时")).unwrap();
+        let ended = s
+            .end_trace_span(&rid, TraceSpanStatus::Failed, Some("工具超时"))
+            .unwrap();
         assert_eq!(ended.status, TraceSpanStatus::Failed);
     }
 
@@ -444,13 +454,17 @@ mod tests {
         assert_eq!(summaries.len(), 2);
         // 每个 summary 有 root span + span_count
         assert_eq!(summaries[0].span_count, 1);
-        assert!(summaries.iter().all(|ts| ts.root_span.parent_span_id.is_none()));
+        assert!(summaries
+            .iter()
+            .all(|ts| ts.root_span.parent_span_id.is_none()));
     }
 
     #[test]
     fn trace_not_found() {
         let s = store();
-        let err = s.end_trace_span("ghost", TraceSpanStatus::Succeeded, None).unwrap_err();
+        let err = s
+            .end_trace_span("ghost", TraceSpanStatus::Succeeded, None)
+            .unwrap_err();
         assert!(matches!(err, TraceQueryError::NotFound(_)));
         assert!(s.get_trace_span("ghost").unwrap().is_none());
         let err = s.list_trace_spans("ghost-trace").unwrap();
@@ -463,7 +477,8 @@ mod tests {
         let root = root_span("t1");
         let rid = root.span_id.clone();
         s.put_trace_span(&root).unwrap();
-        s.end_trace_span(&rid, TraceSpanStatus::Succeeded, None).unwrap();
+        s.end_trace_span(&rid, TraceSpanStatus::Succeeded, None)
+            .unwrap();
         let got = s.get_trace_span(&rid).unwrap().unwrap();
         assert_eq!(got.status, TraceSpanStatus::Succeeded);
         assert!(got.ended_at.is_some());

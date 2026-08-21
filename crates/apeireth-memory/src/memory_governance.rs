@@ -102,8 +102,15 @@ impl std::fmt::Display for MemoryGovernanceError {
             Self::NotFound(id) => write!(f, "episode `{id}` not found"),
             Self::AlreadyForgotten(id) => write!(f, "episode `{id}` already forgotten"),
             Self::Protected(id) => write!(f, "episode `{id}` is protected (unprotect first)"),
-            Self::Conflict { id, expected, actual } => {
-                write!(f, "episode `{id}` revision conflict: expected {expected}, actual {actual}")
+            Self::Conflict {
+                id,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "episode `{id}` revision conflict: expected {expected}, actual {actual}"
+                )
             }
             Self::Invalid(m) => write!(f, "invalid memory governance: {m}"),
         }
@@ -139,7 +146,10 @@ fn now_ms() -> i64 {
 /// 记忆治理存储接口.
 pub trait MemoryGovernanceStore {
     /// 读取单 episode 的治理视图 (含 override content).
-    fn get_governed(&self, episode_id: &str) -> Result<Option<GovernedEpisode>, MemoryGovernanceError>;
+    fn get_governed(
+        &self,
+        episode_id: &str,
+    ) -> Result<Option<GovernedEpisode>, MemoryGovernanceError>;
 
     /// 更新内容 (修订). 乐观并发 expected_rev CAS. 不改原始 episode 行.
     fn update_episode_content(
@@ -159,16 +169,31 @@ pub trait MemoryGovernanceStore {
     ) -> Result<GovernedEpisode, MemoryGovernanceError>;
 
     /// 保护 (防自动遗忘/压缩).
-    fn protect_episode(&self, episode_id: &str, expected_rev: i64) -> Result<GovernedEpisode, MemoryGovernanceError>;
+    fn protect_episode(
+        &self,
+        episode_id: &str,
+        expected_rev: i64,
+    ) -> Result<GovernedEpisode, MemoryGovernanceError>;
 
     /// 解除保护.
-    fn unprotect_episode(&self, episode_id: &str, expected_rev: i64) -> Result<GovernedEpisode, MemoryGovernanceError>;
+    fn unprotect_episode(
+        &self,
+        episode_id: &str,
+        expected_rev: i64,
+    ) -> Result<GovernedEpisode, MemoryGovernanceError>;
 
     /// 治理检索某 session 最近 N 条 (排除 forgotten, 应用 override). 对话检索主路径.
-    fn governed_recent_episodes(&self, session_id: &str, n: usize) -> Result<Vec<GovernedEpisode>, MemoryGovernanceError>;
+    fn governed_recent_episodes(
+        &self,
+        session_id: &str,
+        n: usize,
+    ) -> Result<Vec<GovernedEpisode>, MemoryGovernanceError>;
 
     /// 治理复合查询 (排除 forgotten, 应用 override).
-    fn governed_query(&self, q: &crate::EpisodeQuery) -> Result<Vec<GovernedEpisode>, MemoryGovernanceError>;
+    fn governed_query(
+        &self,
+        q: &crate::EpisodeQuery,
+    ) -> Result<Vec<GovernedEpisode>, MemoryGovernanceError>;
 }
 
 impl SqliteMemoryStore {
@@ -188,7 +213,13 @@ impl SqliteMemoryStore {
             .query_row(
                 "SELECT status, protected, revision FROM episode_governance WHERE episode_id = ?1",
                 params![episode_id],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .map_err(|e| MemoryGovernanceError::Invalid(e.to_string()))?;
         Ok((MemoryGovernanceStatus::from_str(&row.0), row.1 != 0, row.2))
@@ -233,7 +264,10 @@ impl SqliteMemoryStore {
          g.revision AS revision, g.updated_at AS updated_at, g.updated_by AS updated_by, \
          g.forgotten_at AS forgotten_at";
 
-    fn fetch_governed(&self, episode_id: &str) -> Result<Option<GovernedEpisode>, MemoryGovernanceError> {
+    fn fetch_governed(
+        &self,
+        episode_id: &str,
+    ) -> Result<Option<GovernedEpisode>, MemoryGovernanceError> {
         let conn = self.conn()?;
         let row = conn
             .query_row(
@@ -253,7 +287,10 @@ impl SqliteMemoryStore {
 }
 
 impl MemoryGovernanceStore for SqliteMemoryStore {
-    fn get_governed(&self, episode_id: &str) -> Result<Option<GovernedEpisode>, MemoryGovernanceError> {
+    fn get_governed(
+        &self,
+        episode_id: &str,
+    ) -> Result<Option<GovernedEpisode>, MemoryGovernanceError> {
         if episode_id.trim().is_empty() {
             return Err(MemoryGovernanceError::Invalid("episode id is empty".into()));
         }
@@ -315,7 +352,9 @@ impl MemoryGovernanceStore for SqliteMemoryStore {
             return Err(MemoryGovernanceError::Protected(episode_id.to_string()));
         }
         if status == MemoryGovernanceStatus::Forgotten {
-            return Err(MemoryGovernanceError::AlreadyForgotten(episode_id.to_string()));
+            return Err(MemoryGovernanceError::AlreadyForgotten(
+                episode_id.to_string(),
+            ));
         }
         let now = now_ms();
         let conn = self.conn()?;
@@ -335,7 +374,11 @@ impl MemoryGovernanceStore for SqliteMemoryStore {
             .ok_or(MemoryGovernanceError::NotFound(episode_id.to_string()))
     }
 
-    fn protect_episode(&self, episode_id: &str, expected_rev: i64) -> Result<GovernedEpisode, MemoryGovernanceError> {
+    fn protect_episode(
+        &self,
+        episode_id: &str,
+        expected_rev: i64,
+    ) -> Result<GovernedEpisode, MemoryGovernanceError> {
         if episode_id.trim().is_empty() {
             return Err(MemoryGovernanceError::Invalid("episode id is empty".into()));
         }
@@ -360,7 +403,11 @@ impl MemoryGovernanceStore for SqliteMemoryStore {
             .ok_or(MemoryGovernanceError::NotFound(episode_id.to_string()))
     }
 
-    fn unprotect_episode(&self, episode_id: &str, expected_rev: i64) -> Result<GovernedEpisode, MemoryGovernanceError> {
+    fn unprotect_episode(
+        &self,
+        episode_id: &str,
+        expected_rev: i64,
+    ) -> Result<GovernedEpisode, MemoryGovernanceError> {
         if episode_id.trim().is_empty() {
             return Err(MemoryGovernanceError::Invalid("episode id is empty".into()));
         }
@@ -406,14 +453,17 @@ impl MemoryGovernanceStore for SqliteMemoryStore {
         let rows = stmt
             .query_map(params![session_id, n as i64], Self::read_governed_row)
             .map_err(|e| MemoryGovernanceError::Invalid(e.to_string()))?;
-        let mut out: Vec<GovernedEpisode> = rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e| {
-            MemoryGovernanceError::Invalid(e.to_string())
-        })?;
+        let mut out: Vec<GovernedEpisode> = rows
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| MemoryGovernanceError::Invalid(e.to_string()))?;
         out.reverse();
         Ok(out)
     }
 
-    fn governed_query(&self, q: &crate::EpisodeQuery) -> Result<Vec<GovernedEpisode>, MemoryGovernanceError> {
+    fn governed_query(
+        &self,
+        q: &crate::EpisodeQuery,
+    ) -> Result<Vec<GovernedEpisode>, MemoryGovernanceError> {
         let conn = self.conn()?;
         let mut sql = format!(
             "SELECT {} FROM episodes e \
@@ -446,7 +496,9 @@ impl MemoryGovernanceStore for SqliteMemoryStore {
         if let Some(n) = q.limit {
             sql.push_str(&format!(" LIMIT {}", n));
         }
-        let mut stmt = conn.prepare(&sql).map_err(|e| MemoryGovernanceError::Invalid(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| MemoryGovernanceError::Invalid(e.to_string()))?;
         let param_refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
         let rows = stmt
             .query_map(param_refs.as_slice(), Self::read_governed_row)
@@ -497,7 +549,9 @@ mod tests {
     fn memory_update_content_override() {
         let s = store();
         put(&s, "ep-1", "me", "原始内容");
-        let g = s.update_episode_content("ep-1", "修订内容", Some("owner"), 0).unwrap();
+        let g = s
+            .update_episode_content("ep-1", "修订内容", Some("owner"), 0)
+            .unwrap();
         assert_eq!(g.episode.content, "修订内容");
         assert_eq!(g.content_override.as_deref(), Some("修订内容"));
         assert_eq!(g.revision, 1);
@@ -560,9 +614,13 @@ mod tests {
         let s = store();
         put(&s, "ep-1", "me", "x");
         s.update_episode_content("ep-1", "A 改", None, 0).unwrap(); // rev 0→1
-        let err = s.update_episode_content("ep-1", "B 改", None, 0).unwrap_err(); // stale rev
+        let err = s
+            .update_episode_content("ep-1", "B 改", None, 0)
+            .unwrap_err(); // stale rev
         match err {
-            MemoryGovernanceError::Conflict { expected, actual, .. } => {
+            MemoryGovernanceError::Conflict {
+                expected, actual, ..
+            } => {
                 assert_eq!(expected, 0);
                 assert_eq!(actual, 1);
             }

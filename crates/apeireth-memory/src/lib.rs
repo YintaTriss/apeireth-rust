@@ -81,12 +81,13 @@ pub use session_note::{NoteQuery, NoteRecord, NoteStore, SessionRecord, SessionS
 // 独立于 SessionStore trait (旧 upsert 不变), 走 inherent impl on SqliteMemoryStore.
 pub mod session_lifecycle;
 pub use session_lifecycle::{
-    SessionLifecycleError, SessionLifecycleRecord, SessionScope, SessionState, SessionStore as SessionLifecycleStore,
+    SessionLifecycleError, SessionLifecycleRecord, SessionScope, SessionState,
+    SessionStore as SessionLifecycleStore,
 };
 // Core Capability Expansion Phase 3: 记忆治理 (forget/protect/update, 不破坏 append-only episodes).
 pub mod memory_governance;
 pub use memory_governance::{
-    GovernedEpisode, MemoryGovernanceError, MemoryGovernanceStore, MemoryGovernanceStatus,
+    GovernedEpisode, MemoryGovernanceError, MemoryGovernanceStatus, MemoryGovernanceStore,
 };
 // Core Capability Expansion Phase 5: Agent 执行轨迹 (structured trace, 持久化 + 查询).
 pub mod agent_trace;

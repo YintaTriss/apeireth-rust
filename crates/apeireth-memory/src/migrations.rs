@@ -493,7 +493,10 @@ mod tests {
         let store = SqliteMemoryStore::open_in_memory().unwrap();
         let applied = store.applied_migrations().unwrap();
         for v in 1..=7 {
-            assert!(applied.contains(&v), "migration V{v} should be applied on fresh db");
+            assert!(
+                applied.contains(&v),
+                "migration V{v} should be applied on fresh db"
+            );
         }
         // V5/V6/V7 新表/列存在.
         let conn = store.conn().unwrap();
@@ -505,8 +508,20 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        for c in ["title", "scope", "project_id", "state", "metadata_json", "revision", "archived_at", "updated_at"] {
-            assert!(cols.iter().any(|x| x == c), "sessions should have column {c}");
+        for c in [
+            "title",
+            "scope",
+            "project_id",
+            "state",
+            "metadata_json",
+            "revision",
+            "archived_at",
+            "updated_at",
+        ] {
+            assert!(
+                cols.iter().any(|x| x == c),
+                "sessions should have column {c}"
+            );
         }
         // episode_governance 表 (V6).
         let gov_exists: bool = conn
@@ -524,22 +539,44 @@ mod tests {
     fn migrations_reopen_preserves_data_and_idempotent() {
         // 写入跨 V5/V6/V7 的数据, 重跑 migration, 数据不丢 + 幂等.
         let store = SqliteMemoryStore::open_in_memory().unwrap();
+        use crate::agent_trace::{TraceSpan, TraceSpanKind, TraceSpanStatus};
         use crate::episode::EpisodeStore;
         use crate::{MemoryGovernanceStore, SessionLifecycleStore, TraceStore};
-        use crate::agent_trace::{TraceSpan, TraceSpanKind, TraceSpanStatus};
         use apeireth_core::Episode;
         // session lifecycle (V5).
-        store.create_session("s1", Some("持久"), crate::session_lifecycle::SessionScope::Global, None, None).unwrap();
+        store
+            .create_session(
+                "s1",
+                Some("持久"),
+                crate::session_lifecycle::SessionScope::Global,
+                None,
+                None,
+            )
+            .unwrap();
         // episode + governance (V6).
-        store.put_episode(&Episode {id: "ep-1".into(), timestamp: 1, role: "user".into(), content: "x".into(), session_id: "s1".into()}).unwrap();
+        store
+            .put_episode(&Episode {
+                id: "ep-1".into(),
+                timestamp: 1,
+                role: "user".into(),
+                content: "x".into(),
+                session_id: "s1".into(),
+            })
+            .unwrap();
         store.protect_episode("ep-1", 0).unwrap();
         // trace (V7).
         let span = TraceSpan {
-            span_id: "sp1".into(), trace_id: "t1".into(), parent_span_id: None,
-            kind: TraceSpanKind::Conversation, actor: "user".into(),
+            span_id: "sp1".into(),
+            trace_id: "t1".into(),
+            parent_span_id: None,
+            kind: TraceSpanKind::Conversation,
+            actor: "user".into(),
             status: TraceSpanStatus::Succeeded,
-            summary: Some("done".into()), attributes: serde_json::json!({}),
-            started_at: 1, ended_at: Some(2), session_id: Some("s1".into()),
+            summary: Some("done".into()),
+            attributes: serde_json::json!({}),
+            started_at: 1,
+            ended_at: Some(2),
+            session_id: Some("s1".into()),
         };
         store.put_trace_span(&span).unwrap();
         // 重跑 migration (幂等).
@@ -557,7 +594,11 @@ mod tests {
         assert_eq!(t.trace_id, "t1");
         // migration 记录无重复.
         let applied = store.applied_migrations().unwrap();
-        assert_eq!(applied.iter().filter(|v| **v >= 5).count(), 3, "V5/V6/V7 各一条");
+        assert_eq!(
+            applied.iter().filter(|v| **v >= 5).count(),
+            3,
+            "V5/V6/V7 各一条"
+        );
     }
 
     #[test]
@@ -566,13 +607,21 @@ mod tests {
         let store = SqliteMemoryStore::open_in_memory().unwrap();
         use crate::episode::EpisodeStore;
         use crate::MemoryGovernanceStore;
-        store.put_episode(&apeireth_core::Episode {
-            id: "legacy-ep".into(), timestamp: 1, role: "user".into(),
-            content: "old".into(), session_id: "me".into(),
-        }).unwrap();
+        store
+            .put_episode(&apeireth_core::Episode {
+                id: "legacy-ep".into(),
+                timestamp: 1,
+                role: "user".into(),
+                content: "old".into(),
+                session_id: "me".into(),
+            })
+            .unwrap();
         let recent = store.governed_recent_episodes("me", 10).unwrap();
         assert_eq!(recent.len(), 1);
-        assert_eq!(recent[0].status, crate::memory_governance::MemoryGovernanceStatus::Active);
+        assert_eq!(
+            recent[0].status,
+            crate::memory_governance::MemoryGovernanceStatus::Active
+        );
         assert!(!recent[0].protected);
     }
 }

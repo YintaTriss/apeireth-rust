@@ -138,8 +138,15 @@ impl std::fmt::Display for SessionLifecycleError {
             Self::IllegalTransition { id, from, to } => {
                 write!(f, "session `{id}` illegal transition: {from:?} → {to:?}")
             }
-            Self::Conflict { id, expected, actual } => {
-                write!(f, "session `{id}` revision conflict: expected {expected}, actual {actual}")
+            Self::Conflict {
+                id,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "session `{id}` revision conflict: expected {expected}, actual {actual}"
+                )
             }
             Self::Invalid(msg) => write!(f, "invalid session: {msg}"),
         }
@@ -208,7 +215,9 @@ trait SerLen {
 }
 impl SerLen for serde_json::Value {
     fn serialize_len(&self) -> usize {
-        serde_json::to_string(self).map(|s| s.len()).unwrap_or(usize::MAX)
+        serde_json::to_string(self)
+            .map(|s| s.len())
+            .unwrap_or(usize::MAX)
     }
 }
 
@@ -259,10 +268,16 @@ pub trait SessionStore {
     ) -> Result<SessionLifecycleRecord, SessionLifecycleError>;
 
     /// 读取单会话.
-    fn get_session_lifecycle(&self, id: &str) -> Result<Option<SessionLifecycleRecord>, SessionLifecycleError>;
+    fn get_session_lifecycle(
+        &self,
+        id: &str,
+    ) -> Result<Option<SessionLifecycleRecord>, SessionLifecycleError>;
 
     /// 列出会话 (默认排除 archived, 可选包含).
-    fn list_sessions(&self, include_archived: bool) -> Result<Vec<SessionLifecycleRecord>, SessionLifecycleError>;
+    fn list_sessions(
+        &self,
+        include_archived: bool,
+    ) -> Result<Vec<SessionLifecycleRecord>, SessionLifecycleError>;
 
     /// 重命名 (乐观并发: expected_rev CAS).
     fn rename_session(
@@ -273,13 +288,25 @@ pub trait SessionStore {
     ) -> Result<SessionLifecycleRecord, SessionLifecycleError>;
 
     /// 归档 (active → archived).
-    fn archive_session(&self, id: &str, expected_rev: i64) -> Result<SessionLifecycleRecord, SessionLifecycleError>;
+    fn archive_session(
+        &self,
+        id: &str,
+        expected_rev: i64,
+    ) -> Result<SessionLifecycleRecord, SessionLifecycleError>;
 
     /// 恢复 (archived → active).
-    fn restore_session(&self, id: &str, expected_rev: i64) -> Result<SessionLifecycleRecord, SessionLifecycleError>;
+    fn restore_session(
+        &self,
+        id: &str,
+        expected_rev: i64,
+    ) -> Result<SessionLifecycleRecord, SessionLifecycleError>;
 
     /// 关闭 (active/archived → closed, 终态).
-    fn close_session_lifecycle(&self, id: &str, expected_rev: i64) -> Result<SessionLifecycleRecord, SessionLifecycleError>;
+    fn close_session_lifecycle(
+        &self,
+        id: &str,
+        expected_rev: i64,
+    ) -> Result<SessionLifecycleRecord, SessionLifecycleError>;
 }
 
 impl SessionStore for SqliteMemoryStore {
@@ -302,7 +329,8 @@ impl SessionStore for SqliteMemoryStore {
         }
         let meta = metadata.cloned().unwrap_or(serde_json::Value::Null);
         validate_metadata(&meta)?;
-        let meta_json = serde_json::to_string(&meta).map_err(|e| SessionLifecycleError::Invalid(e.to_string()))?;
+        let meta_json = serde_json::to_string(&meta)
+            .map_err(|e| SessionLifecycleError::Invalid(e.to_string()))?;
         let now = now_ms();
 
         let conn = self.conn()?;
@@ -329,10 +357,14 @@ impl SessionStore for SqliteMemoryStore {
         )
         .map_err(|e| SessionLifecycleError::Invalid(e.to_string()))?;
         drop(conn);
-        self.get_session_lifecycle(id)?.ok_or(SessionLifecycleError::NotFound(id.to_string()))
+        self.get_session_lifecycle(id)?
+            .ok_or(SessionLifecycleError::NotFound(id.to_string()))
     }
 
-    fn get_session_lifecycle(&self, id: &str) -> Result<Option<SessionLifecycleRecord>, SessionLifecycleError> {
+    fn get_session_lifecycle(
+        &self,
+        id: &str,
+    ) -> Result<Option<SessionLifecycleRecord>, SessionLifecycleError> {
         validate_id(id)?;
         let conn = self.conn()?;
         let row = conn
@@ -346,7 +378,10 @@ impl SessionStore for SqliteMemoryStore {
         Ok(row)
     }
 
-    fn list_sessions(&self, include_archived: bool) -> Result<Vec<SessionLifecycleRecord>, SessionLifecycleError> {
+    fn list_sessions(
+        &self,
+        include_archived: bool,
+    ) -> Result<Vec<SessionLifecycleRecord>, SessionLifecycleError> {
         let conn = self.conn()?;
         let sql = if include_archived {
             format!("SELECT {SELECT_COLS} FROM sessions ORDER BY last_active_at DESC, id ASC")
@@ -356,7 +391,9 @@ impl SessionStore for SqliteMemoryStore {
                  ORDER BY last_active_at DESC, id ASC"
             )
         };
-        let mut stmt = conn.prepare(&sql).map_err(|e| SessionLifecycleError::Invalid(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| SessionLifecycleError::Invalid(e.to_string()))?;
         let rows = stmt
             .query_map([], row_to_record)
             .map_err(|e| SessionLifecycleError::Invalid(e.to_string()))?;
@@ -388,18 +425,43 @@ impl SessionStore for SqliteMemoryStore {
         if updated == 0 {
             return Err(self.cas_failure(id, expected_rev));
         }
-        self.get_session_lifecycle(id)?.ok_or(SessionLifecycleError::NotFound(id.to_string()))
+        self.get_session_lifecycle(id)?
+            .ok_or(SessionLifecycleError::NotFound(id.to_string()))
     }
 
-    fn archive_session(&self, id: &str, expected_rev: i64) -> Result<SessionLifecycleRecord, SessionLifecycleError> {
-        self.transition(id, expected_rev, SessionState::Active, SessionState::Archived, "archived")
+    fn archive_session(
+        &self,
+        id: &str,
+        expected_rev: i64,
+    ) -> Result<SessionLifecycleRecord, SessionLifecycleError> {
+        self.transition(
+            id,
+            expected_rev,
+            SessionState::Active,
+            SessionState::Archived,
+            "archived",
+        )
     }
 
-    fn restore_session(&self, id: &str, expected_rev: i64) -> Result<SessionLifecycleRecord, SessionLifecycleError> {
-        self.transition(id, expected_rev, SessionState::Archived, SessionState::Active, "active")
+    fn restore_session(
+        &self,
+        id: &str,
+        expected_rev: i64,
+    ) -> Result<SessionLifecycleRecord, SessionLifecycleError> {
+        self.transition(
+            id,
+            expected_rev,
+            SessionState::Archived,
+            SessionState::Active,
+            "active",
+        )
     }
 
-    fn close_session_lifecycle(&self, id: &str, expected_rev: i64) -> Result<SessionLifecycleRecord, SessionLifecycleError> {
+    fn close_session_lifecycle(
+        &self,
+        id: &str,
+        expected_rev: i64,
+    ) -> Result<SessionLifecycleRecord, SessionLifecycleError> {
         let now = now_ms();
         let conn = self.conn()?;
         // closed 是终态: active/archived → closed (单条 CAS, 任意非 closed 源态).
@@ -416,11 +478,13 @@ impl SessionStore for SqliteMemoryStore {
             let rec = self.get_session_lifecycle(id)?;
             match rec {
                 None => Err(SessionLifecycleError::NotFound(id.to_string())),
-                Some(r) if r.state == SessionState::Closed => Err(SessionLifecycleError::IllegalTransition {
-                    id: id.to_string(),
-                    from: SessionState::Closed,
-                    to: SessionState::Closed,
-                }),
+                Some(r) if r.state == SessionState::Closed => {
+                    Err(SessionLifecycleError::IllegalTransition {
+                        id: id.to_string(),
+                        from: SessionState::Closed,
+                        to: SessionState::Closed,
+                    })
+                }
                 Some(r) => Err(SessionLifecycleError::Conflict {
                     id: id.to_string(),
                     expected: expected_rev,
@@ -428,7 +492,8 @@ impl SessionStore for SqliteMemoryStore {
                 }),
             }
         } else {
-            self.get_session_lifecycle(id)?.ok_or(SessionLifecycleError::NotFound(id.to_string()))
+            self.get_session_lifecycle(id)?
+                .ok_or(SessionLifecycleError::NotFound(id.to_string()))
         }
     }
 }
@@ -468,7 +533,8 @@ impl SqliteMemoryStore {
         if updated == 0 {
             return Err(self.transition_failure(id, expected_rev, from, to));
         }
-        self.get_session_lifecycle(id)?.ok_or(SessionLifecycleError::NotFound(id.to_string()))
+        self.get_session_lifecycle(id)?
+            .ok_or(SessionLifecycleError::NotFound(id.to_string()))
     }
 
     /// CAS 失败时区分 Conflict vs NotFound vs IllegalTransition.
@@ -540,7 +606,8 @@ mod tests {
         assert_eq!(got.id, "s1");
 
         // list 默认排除 archived
-        s.create_session("s2", None, SessionScope::Global, None, None).unwrap();
+        s.create_session("s2", None, SessionScope::Global, None, None)
+            .unwrap();
         let list = s.list_sessions(false).unwrap();
         assert_eq!(list.len(), 2);
     }
@@ -548,7 +615,8 @@ mod tests {
     #[test]
     fn session_rename_revision_increment() {
         let s = store();
-        s.create_session("s1", Some("旧标题"), SessionScope::Global, None, None).unwrap();
+        s.create_session("s1", Some("旧标题"), SessionScope::Global, None, None)
+            .unwrap();
         let r = s.rename_session("s1", "新标题", 0).unwrap();
         assert_eq!(r.title.as_deref(), Some("新标题"));
         assert_eq!(r.revision, 1);
@@ -563,7 +631,8 @@ mod tests {
     #[test]
     fn session_archive_restore() {
         let s = store();
-        s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
+        s.create_session("s1", None, SessionScope::Global, None, None)
+            .unwrap();
         let r = s.archive_session("s1", 0).unwrap();
         assert_eq!(r.state, SessionState::Archived);
         assert!(r.archived_at.is_some());
@@ -579,16 +648,23 @@ mod tests {
     #[test]
     fn session_close_is_terminal() {
         let s = store();
-        s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
+        s.create_session("s1", None, SessionScope::Global, None, None)
+            .unwrap();
         let r = s.close_session_lifecycle("s1", 0).unwrap();
         assert_eq!(r.state, SessionState::Closed);
         assert!(r.closed_at.is_some());
         // closed 不可再 archive
         let err = s.archive_session("s1", 1).unwrap_err();
-        assert!(matches!(err, SessionLifecycleError::IllegalTransition { .. }));
+        assert!(matches!(
+            err,
+            SessionLifecycleError::IllegalTransition { .. }
+        ));
         // closed 不可再 close
         let err2 = s.close_session_lifecycle("s1", 1).unwrap_err();
-        assert!(matches!(err2, SessionLifecycleError::IllegalTransition { .. }));
+        assert!(matches!(
+            err2,
+            SessionLifecycleError::IllegalTransition { .. }
+        ));
         // closed 默认不列出, 但 include_archived 时列出 (供审计)
         assert!(s.list_sessions(false).unwrap().is_empty());
         assert_eq!(s.list_sessions(true).unwrap().len(), 1);
@@ -597,29 +673,38 @@ mod tests {
     #[test]
     fn session_invalid_transition_archived_to_archived() {
         let s = store();
-        s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
+        s.create_session("s1", None, SessionScope::Global, None, None)
+            .unwrap();
         s.archive_session("s1", 0).unwrap();
         // 已 archived 再 archive → illegal (from != active)
         let err = s.archive_session("s1", 1).unwrap_err();
-        assert!(matches!(err, SessionLifecycleError::IllegalTransition { .. }));
+        assert!(matches!(
+            err,
+            SessionLifecycleError::IllegalTransition { .. }
+        ));
     }
 
     #[test]
     fn session_revision_conflict_double_archive() {
         let s = store();
-        s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
+        s.create_session("s1", None, SessionScope::Global, None, None)
+            .unwrap();
         s.archive_session("s1", 0).unwrap(); // rev 0→1
-                                               // 用过期 rev 再 archive → conflict (state 仍是 archived, 但 rev 不匹配)
+                                             // 用过期 rev 再 archive → conflict (state 仍是 archived, 但 rev 不匹配)
         let err = s.archive_session("s1", 0).unwrap_err();
         // 这里 state 已是 archived (≠active) → IllegalTransition 优先于 Conflict
-        assert!(matches!(err, SessionLifecycleError::IllegalTransition { .. }));
+        assert!(matches!(
+            err,
+            SessionLifecycleError::IllegalTransition { .. }
+        ));
     }
 
     #[test]
     fn session_restart_persistence() {
         // open_in_memory 同一 store 重开 (in-memory 不跨进程, 但验证 reopen 不崩 + migration 幂等).
         let s = store();
-        s.create_session("s1", Some("持久"), SessionScope::Global, None, None).unwrap();
+        s.create_session("s1", Some("持久"), SessionScope::Global, None, None)
+            .unwrap();
         s.rename_session("s1", "改名", 0).unwrap();
         let got = s.get_session_lifecycle("s1").unwrap().unwrap();
         assert_eq!(got.title.as_deref(), Some("改名"));
@@ -630,7 +715,8 @@ mod tests {
     fn session_episode_relation_preserved() {
         // session 与 episode 关联: archived session 的 episode 仍可查询 (不删).
         let s = store();
-        s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
+        s.create_session("s1", None, SessionScope::Global, None, None)
+            .unwrap();
         use crate::EpisodeStore;
         let ep = apeireth_core::Episode {
             id: "ep-1".into(),
@@ -650,8 +736,11 @@ mod tests {
     #[test]
     fn session_create_duplicate_conflict() {
         let s = store();
-        s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
-        let err = s.create_session("s1", None, SessionScope::Global, None, None).unwrap_err();
+        s.create_session("s1", None, SessionScope::Global, None, None)
+            .unwrap();
+        let err = s
+            .create_session("s1", None, SessionScope::Global, None, None)
+            .unwrap_err();
         assert!(matches!(err, SessionLifecycleError::Conflict { .. }));
     }
 
