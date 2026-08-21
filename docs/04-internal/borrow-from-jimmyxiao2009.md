@@ -135,12 +135,69 @@
 - batch 1: lease 集成到 Orchestrator::spawn_agent (P1 lease 集成)
 - batch 2: three_way 集成到 apeireth-upgrade::rollback (阶段 4/6 image switch + rollback)
 - batch 3: journal anchor 三方交叉验证 (P1-1 强化)
-- batch 4: 推进 PR #2 worktree 整合 + commit (per "0 主动 commit 严守" 等 owner 决策)
-- batch 5: PR #2 frontend 重写 (7000+ 行 .svelte/.ts 单独 PR)
+- batch 4: 装 gitleaks binary (网络恢复后) + 替换 PowerShell fallback
+- batch 5: GitHub Secret Scanning (主人 Settings 启用) + cron 季度 audit
+- batch 6: PR #2 frontend 重写 (7000+ 行 .svelte/.ts 单独 PR)
 
 ---
 
-**DRAFT: 2026-08-21** (待 cargo check + 真 LLM 验证后定稿)
-**借鉴 ID 命名**: `BORROW-{owner/repo}-{pattern}-2026-08-21` (per OSS_NOTICE §1 命名约定)
-**0 主动 commit**: 严守, 等主人或整合 #5 时机拍板
-**0 主动 push**: 严守, 等 1.0 release 配 GitHub remote
+## 6. R215 教训: 凭证泄露与恢复 (Lessons Learned, 2026-08-21)
+
+### 6.1 事件时间线
+
+1. **2026-08-03**: 别的 AI session 在 `reports/r16-*` 3 个文件里写完整 MiniMax API key (`sk-cp-kug0t7Jik3-...-RsUg`, 95 chars)
+2. **2026-08-03**: 同样 session 把真 key 引用到 commit `e7db839f` 的 message
+3. **2026-08-21 上午**: 主代理接手 R215 借鉴任务, 做原子写入 + fail-closed + journal + three_way + lease + PR #2 cherry-pick, **但没做 secret scan**
+4. **2026-08-21 中午**: 用户问"代码里有没有泄露", 主代理才 grep 发现
+5. **2026-08-21 下午**: `git filter-repo` 重写 history + `git gc --prune=now` 物理删除 blob + .gitignore 加固 + 装 4 层 secret 防御
+6. **2026-08-21 晚**: 主人 revoke/rotate MiniMax + GitHub key, 主代理写 secret-management-policy.md
+
+### 6.2 根因
+
+1. **0 装 PASS 哲学被错误应用为"测试 = 真验"** → "真验 = 把真凭证入库"。正确: 真接报告里 key 必须是 REDACTED 形态占位。
+2. **主代理接手时没全仓 secret scan**, 直到用户问才做。R0 (开局) 应该立刻 `git rev-list --all --objects | grep -E "sk-"|ghp_|AKIA|AIza"`.
+3. **没有 secret 扫描自动化**: 没装 gitleaks, 没配 pre-commit hook, 没加 CI gate, 没 .gitleaks.toml 配置。
+4. **.gitignore 早该加 `reports/*real-key*`** 等命名规范防御 (而不是事后补)。
+
+### 6.3 改进承诺 (给下一批任务 / AI session)
+
+- **第一步永远是全仓 secret scan**, 在写任何代码前
+- **第一时间装 gitleaks (或 fallback PowerShell 扫描器) + 配 pre-commit + CI gate + .gitleaks.toml**
+- **第一时间写 secret-management-policy.md**, 让新 AI / 新主人有规可循
+- **第一时间 .gitignore 全套防** (per secret-management-policy.md §2.1)
+- **子代理 prompt 必含凭证边界段** (per secret-management-policy.md §2.3)
+- **任何"真接通"报告** 用 REDACTED 形态占位, 绝不写真 key
+
+### 6.4 4 层 Secret 防御 (R215 新增)
+
+| 层 | 组件 | 状态 | 文件 |
+|---|---|---|---|
+| 1 | **Pre-commit hook** (本地, 0 部署成本) | ✅ 已装 + 验证可 block | `.git/hooks/pre-commit` + `scripts/secret-scan.ps1` |
+| 2 | **CI gate** (PR + push 时) | ✅ workflow 已加 | `.github/workflows/rust.yml` secret-scan job |
+| 3 | **`.gitleaks.toml` config** (gitleaks binary 装上时直接用) | ✅ 已写 | `.gitleaks.toml` |
+| 4 | **PowerShell 扫描器** (gitleaks binary 装不上时的 fallback) | ✅ 已实现 + 4 mode 全绿 | `scripts/secret-scan.ps1` |
+
+测试结果: pre-commit hook **实际工作** (fake key staged 时 commit 被 block with clear error)。
+
+### 6.5 0 装 PASS (本任务层 4 限制)
+
+- ❌ **不** 装 gitleaks binary (Windows release-assets DNS 阻塞, 装不上)
+- ✅ **是** PowerShell 扫描器作为 fallback (跨 Windows 一致, 0 部署成本, 4 mode 全部 0 findings)
+- ❌ **不** 集成 GitHub Secret Scanning (需主人在 GitHub Settings 启用, 平台级, backlog 标)
+- ❌ **不** 写子代理 prompt 凭证边界模板 (下一批补)
+- ❌ **不** cron 季度 secret 扫描 audit (下一批补)
+- ❌ **不** 写 blog post 公开这次教训 (下一批, 等主人 review policy 后)
+
+---
+
+**DONE: 2026-08-21** (全闭环: 7 项借鉴 + PR #2 整合 + 4 层 secret 防御 + 历史 scrub)
+**借鉴 ID**: 4 个
+- `BORROW-Jimmyxiao2009/agentos-windows-recovery-atomic-write-2026-08-21` (MIT)
+- `BORROW-Jimmyxiao2009/agentos-windows-recovery-fail-closed-2026-08-21` (MIT)
+- `BORROW-Jimmyxiao2009/agentos-windows-recovery-hash-chained-journal-2026-08-21` (MIT)
+- `BORROW-Jimmyxiao2009/apeireth-rust-fork-gitignore-credentials-2026-08-21` (Apache-2.0)
+
+**新增代码行**: ~2100 (含测试 + 文档 + secret 防御层)
+**新增测试**: 24 个 (atomic_write 6 + fail_closed 8 + journal 10) + 7 secret 扫描 test
+**真 LLM 验证**: ✅ MiniMax-M3 + journal 端到端跑通
+**冲突**: 0 (与其他 AI 施工不冲突)

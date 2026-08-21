@@ -252,4 +252,30 @@ jobs:
               exit 1
             fi
           fi
+
+  # === R215 防御层: Secret 扫描 (per docs/04-internal/secret-management-policy.md) ===
+  # 4 层防御: pre-commit hook (本地) + CI gate (本 workflow) + GitHub Secret Scanning (平台, 主人启用) + .gitleaks.toml (gitleaks binary 装上时升级)
+  # 当前用本地 PowerShell 扫描器 (gitleaks binary 因 release-assets DNS 阻塞装不上, 0 装 PASS 标注)
+  # 扫描模式: scan-all (working tree) + scan-history (force-push 偷渡防御)
+  secret-scan:
+    name: Secret scan (R215 防御层, 借鉴 gitleaks pattern)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # scan-history 需要全历史
+
+      - name: Install PowerShell
+        shell: pwsh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y powershell
+
+      - name: Secret scan: working tree (scan-all)
+        shell: pwsh
+        run: pwsh scripts/secret-scan.ps1 -Mode scan-all
+
+      - name: Secret scan: git history (scan-history, 防御 force-push 偷渡)
+        shell: pwsh
+        run: pwsh scripts/secret-scan.ps1 -Mode scan-history
           echo "✅ companion-desktop 是独立 workspace"
