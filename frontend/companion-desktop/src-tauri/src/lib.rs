@@ -23,10 +23,23 @@ fn open_settings(app: tauri::AppHandle) {
     }
 }
 
+#[tauri::command]
+fn toggle_quick_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("quick") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
+
 fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "打开主窗", true, None::<&str>)?;
-    Menu::with_items(app, &[&show, &quit])
+    let quick = MenuItem::with_id(app, "quick", "快捷窗口", true, None::<&str>)?;
+    Menu::with_items(app, &[&show, &quick, &quit])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,7 +50,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![ping, open_settings])
+        .invoke_handler(tauri::generate_handler![ping, open_settings, toggle_quick_window])
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -68,6 +81,7 @@ pub fn run() {
                             let _ = window.set_focus();
                         }
                     }
+                    "quick" => toggle_quick_window(app.clone()),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {

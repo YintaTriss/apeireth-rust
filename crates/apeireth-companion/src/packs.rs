@@ -238,6 +238,114 @@ impl PackRegistry {
             .filter(|p| !p.is_expired(now_ms))
             .count()
     }
+
+    // ============================================================
+    // Core Capability Expansion Phase 4 — grant 可见性 / 撤销 / 过期
+    // ============================================================
+
+    /// 列出全部 grants 的视图 (含 active/expired 状态, 供 Tools 页展示 + revoke).
+    pub fn list_grants(&self, now_ms: i64) -> Vec<GrantView> {
+        self.inner
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|p| GrantView::from_pack(p, now_ms))
+            .collect()
+    }
+
+    /// 撤销指定 grant (按 id). 返回是否撤销成功 (id 不存在 → false).
+    /// 撤销后下一次 check_and_consume 立即不再覆盖该工具 (revoke 即时生效).
+    pub fn revoke_grant(&self, id: &str) -> bool {
+        let mut packs = self.inner.lock().unwrap();
+        let before = packs.len();
+        packs.retain(|p| p.id != id);
+        packs.len() != before
+    }
+
+    /// 查找某工具的当前授权决策 (deterministic evaluation).
+    /// 返回 (允许, 匹配的 pack id). 用于权限评估 (不记账; 记账走 check_and_consume).
+    pub fn evaluate(&self, tool: &str, now_ms: i64) -> GrantDecision {
+        let packs = self.inner.lock().unwrap();
+        for p in packs.iter() {
+            if !p.is_expired(now_ms) && p.covers(tool) && p.has_budget() {
+                return GrantDecision::Allow {
+                    pack_id: p.id.clone(),
+                    pack_name: p.name.clone(),
+                    expiry: format!("{:?}", p.expiry),
+                };
+            }
+        }
+        // 有覆盖但过期/无预算 → deny (不是 require-approval; approval 走另一套 ApprovalManager).
+        let covered_expired = packs
+            .iter()
+            .any(|p| p.covers(tool) && (p.is_expired(now_ms) || !p.has_budget()));
+        if covered_expired {
+            GrantDecision::Deny {
+                reason: "grant expired or budget exhausted".into(),
+            }
+        } else {
+            GrantDecision::RequireApproval
+        }
+    }
+}
+
+/// Grant 视图 (只读, 供 HTTP/UI 展示). 不含 secret.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GrantView {
+    pub id: String,
+    pub name: String,
+    pub tools: Vec<String>,
+    pub paths: Vec<String>,
+    pub expiry: String,
+    pub op_budget: Option<u32>,
+    pub used_ops: u32,
+    pub spend_budget: Option<u64>,
+    pub spend_used: u64,
+    pub activated_at_ms: i64,
+    pub created_at_ms: i64,
+    /// 当前是否活跃 (未过期 + 有预算).
+    pub active: bool,
+    /// 是否已过期.
+    pub expired: bool,
+}
+
+impl GrantView {
+    pub fn from_pack(p: &PermissionPack, now_ms: i64) -> Self {
+        let expired = p.is_expired(now_ms);
+        Self {
+            id: p.id.clone(),
+            name: p.name.clone(),
+            tools: p.tools.clone(),
+            paths: p.paths.clone(),
+            expiry: format!("{:?}", p.expiry),
+            op_budget: p.op_budget,
+            used_ops: p.used_ops,
+            spend_budget: p.spend_budget,
+            spend_used: p.spend_used,
+            activated_at_ms: p.activated_at_ms,
+            created_at_ms: p.created_at_ms,
+            active: !expired && p.has_budget(),
+            expired,
+        }
+    }
+}
+
+/// 权限评估决策 (deterministic).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "decision", rename_all = "snake_case")]
+pub enum GrantDecision {
+    /// 允许 (匹配到活跃包).
+    Allow {
+        pack_id: String,
+        pack_name: String,
+        expiry: String,
+    },
+    /// 拒绝 (覆盖但过期/无预算).
+    Deny {
+        reason: String,
+    },
+    /// 需批准 (无覆盖 — 走 ApprovalManager).
+    RequireApproval,
 }
 
 #[cfg(test)]
@@ -310,5 +418,88 @@ mod tests {
         assert_eq!(cfg.timeout_secs, 60);
         // WebSearch 只被无沙盒配置的日常包覆盖 → None
         assert!(r.sandbox_for("WebSearch", now_ms()).is_none());
+    }
+
+    // ===== Core Capability Expansion Phase 4: grant 可见性 / 撤销 / 评估 =====
+
+    #[test]
+    fn phase4_list_grants_shows_active_and_expired() {
+        let r = PackRegistry::new();
+        let active = PermissionPack::timed("活跃包", vec!["ShellExec".into()], 24, None);
+        let active_id = active.id.clone();
+        r.grant(active);
+        // 一个已过期的包
+        let mut expired = PermissionPack::timed("过期包", vec!["FileOperator".into()], 1, None);
+        expired.activated_at_ms = now_ms() - 2 * 3600_000; // 2 小时前激活, 1 小时过期
+        r.grant(expired);
+        let grants = r.list_grants(now_ms());
+        assert_eq!(grants.len(), 2);
+        let active_view = grants.iter().find(|g| g.id == active_id).unwrap();
+        assert!(active_view.active);
+        assert!(!active_view.expired);
+        let expired_view = grants.iter().find(|g| !g.active).unwrap();
+        assert!(expired_view.expired);
+    }
+
+    #[test]
+    fn phase4_revoke_grant_immediate_effect() {
+        let r = PackRegistry::new();
+        let pack = PermissionPack::timed("可撤销", vec!["ShellExec".into()], 24, None);
+        let id = pack.id.clone();
+        r.grant(pack);
+        assert!(r.check_and_consume("ShellExec", now_ms()));
+        // 撤销
+        assert!(r.revoke_grant(&id));
+        // 撤销后立即不再覆盖 (revoke 即时生效)
+        assert!(!r.check_and_consume("ShellExec", now_ms()));
+        // 二次撤销同一 id → false (已不存在)
+        assert!(!r.revoke_grant(&id));
+    }
+
+    #[test]
+    fn phase4_evaluate_allow_deny_require_approval() {
+        let r = PackRegistry::new();
+        // 无覆盖 → RequireApproval
+        match r.evaluate("ShellExec", now_ms()) {
+            GrantDecision::RequireApproval => {}
+            other => panic!("expected RequireApproval, got {other:?}"),
+        }
+        // 授予 → Allow
+        r.grant(PermissionPack::timed("授权", vec!["ShellExec".into()], 24, None));
+        match r.evaluate("ShellExec", now_ms()) {
+            GrantDecision::Allow { pack_name, .. } => assert_eq!(pack_name, "授权"),
+            other => panic!("expected Allow, got {other:?}"),
+        }
+        // 覆盖但过期 → Deny
+        let mut expired = PermissionPack::timed("过期", vec!["FileOperator".into()], 1, None);
+        expired.activated_at_ms = now_ms() - 2 * 3600_000;
+        r.grant(expired);
+        match r.evaluate("FileOperator", now_ms()) {
+            GrantDecision::Deny { .. } => {}
+            other => panic!("expected Deny, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn phase4_grant_view_no_secret() {
+        let r = PackRegistry::new();
+        r.grant(PermissionPack::timed("包", vec!["ShellExec".into()], 1, None));
+        let json = serde_json::to_string(&r.list_grants(now_ms())).unwrap();
+        // grant view 不含 secret
+        assert!(!json.contains("api_key"));
+        assert!(!json.contains("master_token"));
+        assert!(!json.contains("password"));
+    }
+
+    #[test]
+    fn phase4_expiry_boundary() {
+        let r = PackRegistry::new();
+        // 1 小时包, 激活于 now
+        let pack = PermissionPack::timed("边界", vec!["ShellExec".into()], 1, None);
+        let activated = pack.activated_at_ms;
+        r.grant(pack);
+        // 正好 3600s = 边界: now_ms >= activated + 3600000 → 过期
+        assert!(r.check_and_consume("ShellExec", activated + 3_599_999));
+        assert!(!r.check_and_consume("ShellExec", activated + 3_600_000));
     }
 }

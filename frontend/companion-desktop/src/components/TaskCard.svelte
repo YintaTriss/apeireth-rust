@@ -1,6 +1,6 @@
 <script lang="ts">
   import {ExternalLink, Zap} from 'lucide-svelte';
-  import type {TaskCardInfo} from './types';
+  import type {TaskCardInfo} from '../lib/types';
 
   let {
     card,
@@ -26,7 +26,12 @@
   <div class="task-card-head">
     <Zap size={14} />
     <strong>{card.title}</strong>
-    <span class="badge" class:amber={card.status === 'awaiting_approval' || card.status === 'running'} class:green={card.status === 'done'} class:dim={card.status === 'queued'}>
+    <span
+      class="badge"
+      class:amber={card.status === 'awaiting_approval' || card.status === 'running'}
+      class:green={card.status === 'done'}
+      class:dim={card.status === 'queued'}
+    >
       {statusLabel[card.status] || card.status}
     </span>
   </div>

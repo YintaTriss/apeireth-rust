@@ -71,6 +71,13 @@ vended/
 **/cosign.key
 **/cosign.key.*
 
+# 台账 #28 续: Companion provider credential files (本地真实 API key, 严禁入库)
+# companion_serve 启动读取 apikey-ultra.txt (用户本地管理的 secret).
+# 规则精确: 仅忽略 apikey-ultra.txt + apikey-*.txt (连字符变体),
+# 不误伤将来可能的 apikey.example.txt (点号分隔规范示例).
+apikey-ultra.txt
+apikey-*.txt
+
 # Lock the cosign-keygen scratch directory so private keys never enter the repo
 reports/.tmp-cosign-keygen/
 

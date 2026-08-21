@@ -64,6 +64,73 @@ pub const MIGRATIONS: &[Migration] = &[
               ALTER TABLE episodes ADD COLUMN provenance TEXT;\n\
               CREATE INDEX IF NOT EXISTS idx_episodes_created_ms ON episodes(created_ms);",
     },
+    // Core Capability Expansion Phase 2: sessions 表生命周期扩展列.
+    // 向后兼容铁律: 全部新增列 NULLable / 有默认值, 存量行 ALTER 后自动取默认语义
+    // (title NULL→"未命名", state NULL→active, revision NULL→0, scope NULL→global).
+    // 不改既有 sessions 列定义, 不动既有 SessionStore trait 行为 (旧 upsert 仍只写 4 列).
+    // SQLite ALTER TABLE 一次一列 → 多条语句.
+    Migration {
+        version: 5,
+        name: "V5__sessions_lifecycle",
+        sql: "ALTER TABLE sessions ADD COLUMN title TEXT;\n\
+              ALTER TABLE sessions ADD COLUMN scope TEXT;\n\
+              ALTER TABLE sessions ADD COLUMN project_id TEXT;\n\
+              ALTER TABLE sessions ADD COLUMN state TEXT;\n\
+              ALTER TABLE sessions ADD COLUMN metadata_json TEXT;\n\
+              ALTER TABLE sessions ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;\n\
+              ALTER TABLE sessions ADD COLUMN archived_at INTEGER;\n\
+              ALTER TABLE sessions ADD COLUMN updated_at INTEGER;\n\
+              CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);\n\
+              CREATE INDEX IF NOT EXISTS idx_sessions_scope ON sessions(scope);",
+    },
+    // Core Capability Expansion Phase 3: 记忆治理 — episode governance 表.
+    // episodes 表是 append-only (trigger 拒绝 UPDATE/DELETE), 不能直接改其内容/状态.
+    // 治理层用独立 sidecar 表记录可变元数据: forgotten (软删, 从检索排除) /
+    // protected (防自动遗忘) / content_override (修订内容) / revision (乐观并发).
+    // 原始 episode 行不动 → provenance 完整 + 审计可追溯. 存量行无 governance 记录 =
+    // 默认 active/unprotected (LEFT JOIN NULL 语义), 零数据迁移.
+    Migration {
+        version: 6,
+        name: "V6__episode_governance",
+        sql: "CREATE TABLE IF NOT EXISTS episode_governance (\n\
+              episode_id    TEXT PRIMARY KEY,\n\
+              status        TEXT NOT NULL DEFAULT 'active',\n\
+              protected     INTEGER NOT NULL DEFAULT 0,\n\
+              content_override TEXT,\n\
+              revision      INTEGER NOT NULL DEFAULT 0,\n\
+              updated_at    INTEGER,\n\
+              updated_by    TEXT,\n\
+              reason        TEXT,\n\
+              forgotten_at  INTEGER\n\
+              );\n\
+              CREATE INDEX IF NOT EXISTS idx_episode_governance_status ON episode_governance(status);\n\
+              CREATE INDEX IF NOT EXISTS idx_episode_governance_protected ON episode_governance(protected);",
+    },
+    // Core Capability Expansion Phase 5: Agent 执行轨迹 (structured trace).
+    // 一次用户请求 → trace_id; Commander/Worker/Tool/Memory 各为 span (parent_span_id 关联).
+    // append-only (每 span 一行, 终态时写 ended_at/status). 属性 attributes_json 已 redaction.
+    // **严禁**存储模型内部原始 Chain-of-Thought; 只存 safe user-facing summary.
+    // trace_id/span_id 用 16-hex (与 telemetry W3C span 同形态, 便于未来打通).
+    Migration {
+        version: 7,
+        name: "V7__agent_traces",
+        sql: "CREATE TABLE IF NOT EXISTS agent_traces (\n\
+              span_id        TEXT PRIMARY KEY,\n\
+              trace_id       TEXT NOT NULL,\n\
+              parent_span_id TEXT,\n\
+              kind           TEXT NOT NULL,\n\
+              actor          TEXT NOT NULL,\n\
+              status         TEXT NOT NULL DEFAULT 'running',\n\
+              summary        TEXT,\n\
+              attributes_json TEXT NOT NULL DEFAULT '{}',\n\
+              started_at     INTEGER NOT NULL,\n\
+              ended_at       INTEGER,\n\
+              session_id     TEXT\n\
+              );\n\
+              CREATE INDEX IF NOT EXISTS idx_agent_traces_trace ON agent_traces(trace_id, started_at);\n\
+              CREATE INDEX IF NOT EXISTS idx_agent_traces_session ON agent_traces(session_id, started_at);\n\
+              CREATE INDEX IF NOT EXISTS idx_agent_traces_started ON agent_traces(started_at DESC);",
+    },
 ];
 
 const HALLWAYS_SQL: &str = r#"
@@ -416,5 +483,96 @@ mod tests {
             .execute("DELETE FROM thought_stream WHERE id = 't1'", [])
             .unwrap_err();
         assert!(delete_err.to_string().contains("append-only"));
+    }
+
+    // ===== Core Capability Expansion Phase 7: migration integrity =====
+
+    #[test]
+    fn all_migrations_v1_to_v7_applied_on_fresh_db() {
+        // 全新 in-memory DB: V1-V7 全部应用, schema_migrations 记录完整.
+        let store = SqliteMemoryStore::open_in_memory().unwrap();
+        let applied = store.applied_migrations().unwrap();
+        for v in 1..=7 {
+            assert!(applied.contains(&v), "migration V{v} should be applied on fresh db");
+        }
+        // V5/V6/V7 新表/列存在.
+        let conn = store.conn().unwrap();
+        // sessions 生命周期列 (V5).
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(sessions)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        for c in ["title", "scope", "project_id", "state", "metadata_json", "revision", "archived_at", "updated_at"] {
+            assert!(cols.iter().any(|x| x == c), "sessions should have column {c}");
+        }
+        // episode_governance 表 (V6).
+        let gov_exists: bool = conn
+            .query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='episode_governance')", [], |r| r.get(0))
+            .unwrap();
+        assert!(gov_exists, "episode_governance table should exist");
+        // agent_traces 表 (V7).
+        let trace_exists: bool = conn
+            .query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_traces')", [], |r| r.get(0))
+            .unwrap();
+        assert!(trace_exists, "agent_traces table should exist");
+    }
+
+    #[test]
+    fn migrations_reopen_preserves_data_and_idempotent() {
+        // 写入跨 V5/V6/V7 的数据, 重跑 migration, 数据不丢 + 幂等.
+        let store = SqliteMemoryStore::open_in_memory().unwrap();
+        use crate::episode::EpisodeStore;
+        use crate::{MemoryGovernanceStore, SessionLifecycleStore, TraceStore};
+        use crate::agent_trace::{TraceSpan, TraceSpanKind, TraceSpanStatus};
+        use apeireth_core::Episode;
+        // session lifecycle (V5).
+        store.create_session("s1", Some("持久"), crate::session_lifecycle::SessionScope::Global, None, None).unwrap();
+        // episode + governance (V6).
+        store.put_episode(&Episode {id: "ep-1".into(), timestamp: 1, role: "user".into(), content: "x".into(), session_id: "s1".into()}).unwrap();
+        store.protect_episode("ep-1", 0).unwrap();
+        // trace (V7).
+        let span = TraceSpan {
+            span_id: "sp1".into(), trace_id: "t1".into(), parent_span_id: None,
+            kind: TraceSpanKind::Conversation, actor: "user".into(),
+            status: TraceSpanStatus::Succeeded,
+            summary: Some("done".into()), attributes: serde_json::json!({}),
+            started_at: 1, ended_at: Some(2), session_id: Some("s1".into()),
+        };
+        store.put_trace_span(&span).unwrap();
+        // 重跑 migration (幂等).
+        {
+            let guard = store.conn().unwrap();
+            let mut g = guard;
+            run_migrations(&mut g).unwrap();
+        }
+        // 数据仍在.
+        let s = store.get_session_lifecycle("s1").unwrap().unwrap();
+        assert_eq!(s.title.as_deref(), Some("持久"));
+        let g = store.get_governed("ep-1").unwrap().unwrap();
+        assert!(g.protected);
+        let t = store.get_trace_span("sp1").unwrap().unwrap();
+        assert_eq!(t.trace_id, "t1");
+        // migration 记录无重复.
+        let applied = store.applied_migrations().unwrap();
+        assert_eq!(applied.iter().filter(|v| **v >= 5).count(), 3, "V5/V6/V7 各一条");
+    }
+
+    #[test]
+    fn legacy_episode_works_after_v6_governance_added() {
+        // 旧 episode (无 governance 行) 在 V6 后仍可正常检索 + 默认 active.
+        let store = SqliteMemoryStore::open_in_memory().unwrap();
+        use crate::episode::EpisodeStore;
+        use crate::MemoryGovernanceStore;
+        store.put_episode(&apeireth_core::Episode {
+            id: "legacy-ep".into(), timestamp: 1, role: "user".into(),
+            content: "old".into(), session_id: "me".into(),
+        }).unwrap();
+        let recent = store.governed_recent_episodes("me", 10).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].status, crate::memory_governance::MemoryGovernanceStatus::Active);
+        assert!(!recent[0].protected);
     }
 }
