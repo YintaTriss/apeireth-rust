@@ -214,7 +214,7 @@ fn real_start(
 
     // 2. 配置 vCPU + RAM
     let nvcpus = config.vcpus.min(32).max(1) as u8;
-    let ram_mib = config.memory_mb.max(1) as u64;
+    let ram_mib = u64::from(config.memory_mb.max(1));
     // 0.9.7 krun_set_vm_config 3 args: ctx_id, num_vcpus, ram_mib (没 flags/ret_mode 之前误传)
     //   0 装期: ram_mib u64 -> u32 (try_into unwrap, 0 装期不超 32-bit)
     let ram_mib_u32: u32 = ram_mib.try_into().unwrap();
