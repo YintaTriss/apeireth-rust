@@ -80,7 +80,7 @@ fn backend_kind_classification_6() {
     // 互斥且穷尽: 6 backend 各属一个类别
     for kind in BackendKind::ALL {
         let count =
-            (kind.is_local() as u32) + u32::from(kind.is_container()) + u32::from(kind.is_remote());
+            u32::from(kind.is_local()) + u32::from(kind.is_container()) + u32::from(kind.is_remote());
         assert_eq!(count, 1, "每个 kind 恰属 1 类别: {kind:?}");
     }
 }
