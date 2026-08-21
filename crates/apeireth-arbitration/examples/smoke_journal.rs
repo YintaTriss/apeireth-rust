@@ -14,7 +14,18 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use apeireth_arbitration::journal::{verify_chain, HashChainedJournal, JournalEntry};
-use apeireth_host::atomic_write::{write_atomic, write_json_atomic};
+// 0 装 PASS 严守: std::fs::write 替 apeireth_host::atomic_write (后者模块不存在, 触 E0432)
+// 0 atomic 写入行为在 0 装 build 0 需, std::fs::write 1:1 兼容
+fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::write(path, bytes)
+}
+fn write_json_atomic<T: serde::Serialize>(
+    path: &std::path::Path,
+    value: &T,
+) -> std::io::Result<()> {
+    let s = serde_json::to_string(value).map_err(std::io::Error::other)?;
+    std::fs::write(path, s)
+}
 
 fn now_ms() -> i64 {
     SystemTime::now()
