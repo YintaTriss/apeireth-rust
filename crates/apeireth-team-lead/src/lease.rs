@@ -97,7 +97,10 @@ pub enum TaskState {
 impl TaskState {
     /// 终态判断 — Failed / Cancelled / Completed.
     pub fn is_terminal(self) -> bool {
-        matches!(self, TaskState::Failed | TaskState::Cancelled | TaskState::Completed)
+        matches!(
+            self,
+            TaskState::Failed | TaskState::Cancelled | TaskState::Completed
+        )
     }
 
     /// 活跃态判断 — Leased / Running (被分配且未终态).
@@ -311,7 +314,10 @@ impl LeaseManager for InMemoryLeaseManager {
         let now = self.now_ms();
         let mut guard = self.inner.lock().map_err(|_| LeaseError::LockPoisoned)?;
         if let Some(entry) = guard.get(&task_id) {
-            return Err(LeaseError::AlreadyLeased(task_id.clone(), entry.lease.generation));
+            return Err(LeaseError::AlreadyLeased(
+                task_id.clone(),
+                entry.lease.generation,
+            ));
         }
         let gen = self.global_gen.fetch_add(1, Ordering::SeqCst);
         let lease = TaskLease {
@@ -405,14 +411,14 @@ mod tests {
     #[test]
     fn acquire_then_release_state_goes_ready_again() {
         let mgr = new_mgr();
-        let guard = try_acquire(Arc::clone(&mgr), "task-1".into(), "agent-A", 60_000)
-            .expect("acquire 1");
+        let guard =
+            try_acquire(Arc::clone(&mgr), "task-1".into(), "agent-A", 60_000).expect("acquire 1");
         assert_eq!(guard.lease().unwrap().owner, "agent-A");
         guard.release().expect("release 1");
         assert_eq!(active_count_dyn(&mgr), 0);
         // 重新 acquire 应成功 (回到 Ready)
-        let guard2 = try_acquire(Arc::clone(&mgr), "task-1".into(), "agent-B", 60_000)
-            .expect("acquire 2");
+        let guard2 =
+            try_acquire(Arc::clone(&mgr), "task-1".into(), "agent-B", 60_000).expect("acquire 2");
         assert_eq!(guard2.lease().unwrap().owner, "agent-B");
         drop(guard2);
     }
@@ -423,8 +429,8 @@ mod tests {
         let mgr = new_mgr();
         let task_id: TaskId = "task-2".into();
         // acquire: Ready → Leased
-        let guard = try_acquire(Arc::clone(&mgr), task_id.clone(), "agent-X", 60_000)
-            .expect("acquire");
+        let guard =
+            try_acquire(Arc::clone(&mgr), task_id.clone(), "agent-X", 60_000).expect("acquire");
         assert_eq!(guard.lease().unwrap().task_id, task_id);
         // (caller 标 Running — 本模块不耦合 TaskState, 由 Orchestrator 维护)
         // release: Leased → Completed
@@ -438,8 +444,8 @@ mod tests {
     fn reap_expired_marks_task_failed_not_ready() {
         let mgr = new_mgr();
         // ttl=10ms, reap 用 i64::MAX 确保 expires_at_ms(≈ now + 10) <= MAX
-        let _guard = try_acquire(Arc::clone(&mgr), "task-3".into(), "agent-FAIL", 10)
-            .expect("acquire");
+        let _guard =
+            try_acquire(Arc::clone(&mgr), "task-3".into(), "agent-FAIL", 10).expect("acquire");
         let expired = mgr.reap_expired(i64::MAX);
         assert_eq!(expired, vec![TaskId::from("task-3")]);
         // 关键验证: reap 后 lease 不再 active — 验证"自动回 Ready"被禁止
@@ -464,7 +470,10 @@ mod tests {
         };
         let res = mgr.release(fake_lease);
         assert!(
-            matches!(res, Err(LeaseError::GenerationMismatch { .. } | LeaseError::NotLeased(_))),
+            matches!(
+                res,
+                Err(LeaseError::GenerationMismatch { .. } | LeaseError::NotLeased(_))
+            ),
             "release on missing/forged lease must fail (got {res:?})"
         );
     }
@@ -476,11 +485,10 @@ mod tests {
     fn reap_expired_only_affects_running_leases() {
         let mgr = new_mgr();
         // 短 TTL lease 立即到期
-        let _a = try_acquire(Arc::clone(&mgr), "task-A".into(), "agent-1", 1)
-            .expect("a (ttl=1ms)");
+        let _a = try_acquire(Arc::clone(&mgr), "task-A".into(), "agent-1", 1).expect("a (ttl=1ms)");
         // 长 TTL lease 不会到期
-        let _b = try_acquire(Arc::clone(&mgr), "task-B".into(), "agent-2", 60_000)
-            .expect("b (ttl=60s)");
+        let _b =
+            try_acquire(Arc::clone(&mgr), "task-B".into(), "agent-2", 60_000).expect("b (ttl=60s)");
         // 取 acquire 后的 now_ms, +10ms 必然 > 短 TTL 过期时间 (< now+1+采集误差),
         // 但 < 长 TTL 过期时间 (now + 60_000).
         let now = mgr.now_ms();
@@ -530,10 +538,19 @@ mod tests {
         }
         eprintln!("wins={}, errs={}", wins.len(), errs.len());
         // 仅一个线程成功 acquire (因为只有一个 guard 存活, 后续 acquire 都看到 map 非空)
-        assert_eq!(wins.len(), 1, "exactly one acquirer should win (got {})", wins.len());
+        assert_eq!(
+            wins.len(),
+            1,
+            "exactly one acquirer should win (got {})",
+            wins.len()
+        );
         // 至少要有 AlreadyLeased 错误 (15 个失败)
-        assert!(errs.iter().any(|e| matches!(e, LeaseError::AlreadyLeased(_, _))),
-            "expected AlreadyLeased errors, got {:?}", errs);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, LeaseError::AlreadyLeased(_, _))),
+            "expected AlreadyLeased errors, got {:?}",
+            errs
+        );
     }
 
     /// 7. RAII — guard drop 后 lease 不再 active.
@@ -541,8 +558,8 @@ mod tests {
     fn lease_guard_drop_auto_releases() {
         let mgr = new_mgr();
         {
-            let _guard = try_acquire(Arc::clone(&mgr), "task-7".into(), "agent-A", 60_000)
-                .expect("acquire");
+            let _guard =
+                try_acquire(Arc::clone(&mgr), "task-7".into(), "agent-A", 60_000).expect("acquire");
             assert_eq!(active_count_dyn(&mgr), 1);
         } // guard drop — RAII auto-release
         assert_eq!(active_count_dyn(&mgr), 0);
@@ -552,8 +569,8 @@ mod tests {
     #[test]
     fn guard_release_then_drop_does_not_double_release() {
         let mgr = new_mgr();
-        let guard = try_acquire(Arc::clone(&mgr), "task-8".into(), "agent-A", 60_000)
-            .expect("acquire");
+        let guard =
+            try_acquire(Arc::clone(&mgr), "task-8".into(), "agent-A", 60_000).expect("acquire");
         guard.release().expect("explicit release");
         assert_eq!(active_count_dyn(&mgr), 0);
         // 模拟"旧 guard drop 试图再次 release" — release 返回 NotLeased, 不 panic.
