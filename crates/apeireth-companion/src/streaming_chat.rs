@@ -345,7 +345,9 @@ impl StreamingChat {
             _ => return Ok(events),
         };
 
-        let Some(delta) = choice.get("delta") else { return Ok(events) };
+        let Some(delta) = choice.get("delta") else {
+            return Ok(events);
+        };
 
         // 处理 `delta.content` (跨 chunk 切 CoT).
         if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
