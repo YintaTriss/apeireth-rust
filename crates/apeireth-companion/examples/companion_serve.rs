@@ -82,10 +82,10 @@ const DEFAULT_BASE_URL: &str = "https://api.minimaxi.com";
 /// 历史原因保留 const 形如 `MODEL` 字面量供文档引用; 真正取值走 `model()` 函数.
 const DEFAULT_MODEL: &str = "MiniMax-M3";
 
-/// 全局 model 选取 (env `APEIRETH_LLM_MODEL` 优先, 缺省回落 `DEFAULT_MODEL`).
-/// 0 装 PASS: 缺省回落 = 与旧版 `MiniMax-M3` 行为 1:1.
-/// **注**: 用 thread_local + leak 模式, 这样 model() 返 &'static str (供现有调用点使用),
-/// 测试可多次 init 每次新 leak. leak 内存只在测试 + 启动期, 可忽略.
+// 全局 model 选取 (env `APEIRETH_LLM_MODEL` 优先, 缺省回落 `DEFAULT_MODEL`).
+// 0 装 PASS: 缺省回落 = 与旧版 `MiniMax-M3` 行为 1:1.
+// **注**: 用 thread_local + leak 模式, 这样 model() 返 &'static str (供现有调用点使用),
+// 测试可多次 init 每次新 leak. leak 内存只在测试 + 启动期, 可忽略.
 thread_local! {
     static MODEL: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
 }
@@ -108,10 +108,10 @@ fn model() -> &'static str {
     })
 }
 
-/// 全局 base URL 选取 (优先级: TOML env → APEIRETH_LLM_BASE_URL env → DEFAULT_BASE_URL).
-/// **0 装 PASS**: 缺省回落 = minimaxi 主域, 与旧版 1:1 行为.
-/// **TOML 入口**: env `APEIRETH_LLM_CONFIG=path/to.toml` 时, 第一个 provider 的
-/// `base_url` 自动覆盖 `DEFAULT_BASE_URL`. 这让用户不用改源码就能切换 LLM 服务.
+// 全局 base URL 选取 (优先级: TOML env → APEIRETH_LLM_BASE_URL env → DEFAULT_BASE_URL).
+// **0 装 PASS**: 缺省回落 = minimaxi 主域, 与旧版 1:1 行为.
+// **TOML 入口**: env `APEIRETH_LLM_CONFIG=path/to.toml` 时, 第一个 provider 的
+// `base_url` 自动覆盖 `DEFAULT_BASE_URL`. 这让用户不用改源码就能切换 LLM 服务.
 thread_local! {
     static BASE_URL: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
 }
