@@ -215,11 +215,10 @@ fn real_start(
     // 2. 配置 vCPU + RAM
     let nvcpus = config.vcpus.min(32).max(1) as u8;
     let ram_mib = config.memory_mb.max(1) as u64;
-    // 0.9.7 krun_set_vm_config 5 args: ctx_id, nvcpus, ram_mib, flags, ret_mode
-    //   0 装期: 0u32 -> flags, 0u8 -> ret_mode (默认)
-    // ram_mib u64 -> u32 (try_into unwrap, 0 装期不超 32-bit)
+    // 0.9.7 krun_set_vm_config 3 args: ctx_id, num_vcpus, ram_mib (没 flags/ret_mode 之前误传)
+    //   0 装期: ram_mib u64 -> u32 (try_into unwrap, 0 装期不超 32-bit)
     let ram_mib_u32: u32 = ram_mib.try_into().unwrap();
-    let rc = unsafe { libkrun_sys::krun_set_vm_config(ctx_id, nvcpus, ram_mib_u32, 0u32, 0u8) };
+    let rc = unsafe { libkrun_sys::krun_set_vm_config(ctx_id, nvcpus, ram_mib_u32) };
     if rc != 0 {
         unsafe { libkrun_sys::krun_free_ctx(ctx_id) };
         return Err(format!("krun_set_vm_config 失败 (rc={rc})"));
@@ -229,9 +228,9 @@ fn real_start(
     if let Some(rootfs) = &config.rootfs {
         let cstr = CString::new(rootfs.to_string_lossy().into_owned())
             .map_err(|e| format!("rootfs 路径含 null 字节: {e}"))?;
-        // 0.9.7 krun_add_disk2 5 args: ctx_id, path, format, flags, sync
-        //   0 装期: 0 -> format (无 format hint), 0u32 -> flags (默认), false -> sync (不阻塞)
-        // std::ptr::null::<i8>() 返 *const i8 (匹配 FFI 形参)
+        // 0.9.7 krun_add_disk2 5 args: ctx_id, block_id, disk_path, disk_format, read_only
+        //   block_id 是 block device name (字符串), disk_path 是 disk image 路径, read_only bool
+        //   0 装期: cstr 当 block_id (占位), std::ptr::null() 当 disk_path (无 image), false 当 read_only
         let rc = unsafe {
             libkrun_sys::krun_add_disk2(ctx_id, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false)
         };
@@ -260,7 +259,8 @@ fn real_start(
     if let Some(initrd) = &config.initrd {
         let cstr = CString::new(initrd.to_string_lossy().into_owned())
             .map_err(|e| format!("initrd 路径含 null 字节: {e}"))?;
-        // 0.9.7 krun_add_disk2 5 args: ctx_id, path, format, flags, sync
+        // 0.9.7 krun_add_disk2 5 args: ctx_id, block_id, disk_path, disk_format, read_only
+        //   initrd 用 cstr 当 block_id, std::ptr::null() 当 disk_path (无 image), false 当 read_only
         let rc = unsafe {
             libkrun_sys::krun_add_disk2(ctx_id, cstr.as_ptr(), std::ptr::null::<i8>(), 0u32, false)
         };
