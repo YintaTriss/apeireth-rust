@@ -3,14 +3,16 @@
 //! 真实链路测试：进程、HTTP 协议状态、SQLite 持久化、ActionStream 审计、
 //! 权限洋葱审批、图谱三元组、目标状态机、SSE 事件格式。
 
-use std::sync::Arc;
-use serde_json::{json, Value};
-use apeireth_core::Episode;
-use apeireth_memory::{ActionStream, EpisodeStore, HistoryEntry, HistoryStream, SqliteMemoryStore, StreamKind};
-use apeireth_memory::history_streams::StreamDepth;
 use apeireth_companion::approval_requests::{list, mark_approved, record_request};
 use apeireth_companion::experience::{Experience, ExperienceStore};
 use apeireth_companion::goal::{GoalPhase, GoalService};
+use apeireth_core::Episode;
+use apeireth_memory::history_streams::StreamDepth;
+use apeireth_memory::{
+    ActionStream, EpisodeStore, HistoryEntry, HistoryStream, SqliteMemoryStore, StreamKind,
+};
+use serde_json::{json, Value};
+use std::sync::Arc;
 
 fn new_in_memory_store() -> Arc<SqliteMemoryStore> {
     Arc::new(SqliteMemoryStore::open_in_memory().unwrap())
@@ -192,12 +194,7 @@ fn smoke_06_goal_service_state_machine() {
     assert_eq!(snap2.revision, 2);
 
     // 阻塞
-    let snap3 = service
-        .block(
-            "WAITING_APPROVAL",
-            "等待主人授权",
-        )
-        .unwrap();
+    let snap3 = service.block("WAITING_APPROVAL", "等待主人授权").unwrap();
     assert_eq!(snap3.phase, GoalPhase::Blocked);
 
     // 重启验证持久化恢复

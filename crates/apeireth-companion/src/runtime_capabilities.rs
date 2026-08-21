@@ -264,7 +264,13 @@ pub fn current_manifest(provider: &ProviderRuntimeState) -> CapabilityManifest {
 
     // --- sessions: 后端会话生命周期 (core, Phase 2 已接线 mutation) ---
     let sessions = vec![
-        cap("sessions.read", true, true, false, &["list", "get", "timeline"]),
+        cap(
+            "sessions.read",
+            true,
+            true,
+            false,
+            &["list", "get", "timeline"],
+        ),
         cap("sessions.create", true, false, true, &["create"]),
         cap("sessions.rename", true, false, true, &["rename"]),
         cap("sessions.archive", true, false, true, &["archive"]),
@@ -274,7 +280,13 @@ pub fn current_manifest(provider: &ProviderRuntimeState) -> CapabilityManifest {
 
     // --- memory: 记忆 (core, Phase 3 已接线 update/forget/protect/unprotect) ---
     let memory = vec![
-        cap("memory.read", true, true, false, &["list", "search", "streams", "graph"]),
+        cap(
+            "memory.read",
+            true,
+            true,
+            false,
+            &["list", "search", "streams", "graph"],
+        ),
         cap("memory.append", true, false, true, &["append"]),
         cap("memory.update", true, false, true, &["update"]),
         cap("memory.forget", true, false, true, &["forget"]),
@@ -398,7 +410,13 @@ pub fn legacy_manifest(service_version: &str) -> CapabilityManifest {
         },
         CapabilityGroup {
             name: "sessions".into(),
-            capabilities: vec![cap("sessions.read", true, true, false, &["list", "timeline"])],
+            capabilities: vec![cap(
+                "sessions.read",
+                true,
+                true,
+                false,
+                &["list", "timeline"],
+            )],
         },
         CapabilityGroup {
             name: "memory".into(),
@@ -410,7 +428,13 @@ pub fn legacy_manifest(service_version: &str) -> CapabilityManifest {
         },
         CapabilityGroup {
             name: "permissions".into(),
-            capabilities: vec![cap("permissions.requests.read", true, true, false, &["list"])],
+            capabilities: vec![cap(
+                "permissions.requests.read",
+                true,
+                true,
+                false,
+                &["list"],
+            )],
         },
         CapabilityGroup {
             name: "activity".into(),
@@ -614,7 +638,10 @@ mod tests {
         let invoke = m.find("tools.invoke").unwrap();
         assert!(invoke.supported);
         assert!(!invoke.is_available());
-        assert_eq!(invoke.reason, Some(AvailabilityReason::ProviderNotConfigured));
+        assert_eq!(
+            invoke.reason,
+            Some(AvailabilityReason::ProviderNotConfigured)
+        );
         // core 能力不受 provider 影响
         assert!(m.is_available("sessions.create"));
         assert!(m.is_available("memory.forget"));
@@ -649,7 +676,10 @@ mod tests {
         }"#;
         let m: CapabilityManifest = serde_json::from_str(json).unwrap();
         let chat = m.find("chat.completions").unwrap();
-        assert!(chat.available.is_none(), "旧 manifest 无 available 字段 → None");
+        assert!(
+            chat.available.is_none(),
+            "旧 manifest 无 available 字段 → None"
+        );
         assert!(chat.is_available(), "None 回落 supported=true → available");
         assert_eq!(chat.reason, None);
         // is_available() 走回落
@@ -661,8 +691,14 @@ mod tests {
         // 新 manifest 序列化必须含 available 字段 (新客户端可读).
         let m = unconfigured_manifest();
         let json = serde_json::to_string(&m).unwrap();
-        assert!(json.contains("\"available\""), "新 manifest 序列化含 available");
-        assert!(json.contains("provider_not_configured"), "含 machine-readable reason");
+        assert!(
+            json.contains("\"available\""),
+            "新 manifest 序列化含 available"
+        );
+        assert!(
+            json.contains("provider_not_configured"),
+            "含 machine-readable reason"
+        );
     }
 
     #[test]

@@ -68,7 +68,12 @@ fn is_sensitive_key(key: &str) -> bool {
 }
 
 /// 检查 summary 是否含原始 reasoning 标记 (防误存 CoT).
-const COT_MARKERS: &[&str] = &["reasoning_content", "chain_of_thought", "<thought>", "thinking"];
+const COT_MARKERS: &[&str] = &[
+    "reasoning_content",
+    "chain_of_thought",
+    "<thought>",
+    "thinking",
+];
 pub fn summary_is_safe(summary: &str) -> bool {
     let lower = summary.to_lowercase();
     !COT_MARKERS.iter().any(|m| lower.contains(m))
@@ -85,7 +90,10 @@ pub struct TraceRecorder {
 }
 
 impl TraceRecorder {
-    pub fn new(store: Arc<SqliteMemoryStore>, events: tokio::sync::broadcast::Sender<String>) -> Self {
+    pub fn new(
+        store: Arc<SqliteMemoryStore>,
+        events: tokio::sync::broadcast::Sender<String>,
+    ) -> Self {
         Self { store, events }
     }
 
@@ -99,7 +107,9 @@ impl TraceRecorder {
         attributes: Option<Value>,
     ) -> Result<TraceSpan, String> {
         let trace_id = new_id();
-        self.start_span(&trace_id, None, kind, actor, summary, session_id, attributes)
+        self.start_span(
+            &trace_id, None, kind, actor, summary, session_id, attributes,
+        )
     }
 
     /// 创建子 span. trace_id 继承父; parent_span_id 关联.
@@ -113,7 +123,15 @@ impl TraceRecorder {
         session_id: Option<&str>,
         attributes: Option<Value>,
     ) -> Result<TraceSpan, String> {
-        self.start_span(trace_id, Some(parent_span_id), kind, actor, summary, session_id, attributes)
+        self.start_span(
+            trace_id,
+            Some(parent_span_id),
+            kind,
+            actor,
+            summary,
+            session_id,
+            attributes,
+        )
     }
 
     fn start_span(
@@ -149,7 +167,9 @@ impl TraceRecorder {
             ended_at: None,
             session_id: session_id.map(|s| s.to_string()),
         };
-        self.store.put_trace_span(&span).map_err(|e| e.to_string())?;
+        self.store
+            .put_trace_span(&span)
+            .map_err(|e| e.to_string())?;
         // SSE 推送 (best-effort; 无订阅者忽略)
         let _ = self.events.send(self.span_event_json(&span, "span_start"));
         Ok(span)
@@ -253,22 +273,56 @@ mod tests {
     fn recorder_root_and_child_tree() {
         let (r, s) = recorder();
         let root = r
-            .start_root(TraceSpanKind::Conversation, "user", Some("用户提问"), Some("s1"), None)
+            .start_root(
+                TraceSpanKind::Conversation,
+                "user",
+                Some("用户提问"),
+                Some("s1"),
+                None,
+            )
             .unwrap();
         let mem = r
-            .start_child(&root.trace_id, &root.span_id, TraceSpanKind::Memory, "companion", Some("检索记忆"), Some("s1"), None)
+            .start_child(
+                &root.trace_id,
+                &root.span_id,
+                TraceSpanKind::Memory,
+                "companion",
+                Some("检索记忆"),
+                Some("s1"),
+                None,
+            )
             .unwrap();
         let tool = r
-            .start_child(&root.trace_id, &mem.span_id, TraceSpanKind::Tool, "tool:WebSearch", None, Some("s1"), Some(json!({"args":{"q":"rust"}})))
+            .start_child(
+                &root.trace_id,
+                &mem.span_id,
+                TraceSpanKind::Tool,
+                "tool:WebSearch",
+                None,
+                Some("s1"),
+                Some(json!({"args":{"q":"rust"}})),
+            )
             .unwrap();
-        r.end_span(&tool.span_id, TraceSpanStatus::Succeeded, Some("搜索完成")).unwrap();
-        r.end_span(&root.span_id, TraceSpanStatus::Succeeded, Some("响应完成")).unwrap();
+        r.end_span(&tool.span_id, TraceSpanStatus::Succeeded, Some("搜索完成"))
+            .unwrap();
+        r.end_span(&root.span_id, TraceSpanStatus::Succeeded, Some("响应完成"))
+            .unwrap();
 
         let spans = s.list_trace_spans(&root.trace_id).unwrap();
         assert_eq!(spans.len(), 3);
         // parent-child 关联正确
-        assert!(spans.iter().any(|sp| sp.span_id == mem.span_id && sp.parent_span_id == Some(root.span_id.clone())));
-        assert!(spans.iter().any(|sp| sp.span_id == tool.span_id && sp.parent_span_id == Some(mem.span_id.clone())));
+        assert!(
+            spans
+                .iter()
+                .any(|sp| sp.span_id == mem.span_id
+                    && sp.parent_span_id == Some(root.span_id.clone()))
+        );
+        assert!(
+            spans
+                .iter()
+                .any(|sp| sp.span_id == tool.span_id
+                    && sp.parent_span_id == Some(mem.span_id.clone()))
+        );
         // 工具 span 终态 succeeded
         let tool_span = spans.iter().find(|sp| sp.span_id == tool.span_id).unwrap();
         assert_eq!(tool_span.status, TraceSpanStatus::Succeeded);
@@ -299,7 +353,13 @@ mod tests {
     fn recorder_cot_summary_not_stored() {
         let (r, s) = recorder();
         let root = r
-            .start_root(TraceSpanKind::Agent, "commander", Some("reasoning_content: I should think about..."), None, None)
+            .start_root(
+                TraceSpanKind::Agent,
+                "commander",
+                Some("reasoning_content: I should think about..."),
+                None,
+                None,
+            )
             .unwrap();
         let got = s.get_trace_span(&root.span_id).unwrap().unwrap();
         let json = serde_json::to_string(&got).unwrap();
@@ -313,9 +373,17 @@ mod tests {
     fn recorder_failure_status() {
         let (r, s) = recorder();
         let root = r
-            .start_root(TraceSpanKind::Worker, "worker:1", Some("子任务"), None, None)
+            .start_root(
+                TraceSpanKind::Worker,
+                "worker:1",
+                Some("子任务"),
+                None,
+                None,
+            )
             .unwrap();
-        let ended = r.end_span(&root.span_id, TraceSpanStatus::Failed, Some("超时")).unwrap();
+        let ended = r
+            .end_span(&root.span_id, TraceSpanStatus::Failed, Some("超时"))
+            .unwrap();
         assert_eq!(ended.status, TraceSpanStatus::Failed);
         let got = s.get_trace_span(&root.span_id).unwrap().unwrap();
         assert_eq!(got.status, TraceSpanStatus::Failed);
@@ -336,12 +404,21 @@ mod tests {
             "command": "ls -la"
         });
         let span = r
-            .start_root(TraceSpanKind::Tool, "tool:ShellExec", Some("执行命令"), None, Some(attrs))
+            .start_root(
+                TraceSpanKind::Tool,
+                "tool:ShellExec",
+                Some("执行命令"),
+                None,
+                Some(attrs),
+            )
             .unwrap();
         let got = s.get_trace_span(&span.span_id).unwrap().unwrap();
         let stored = serde_json::to_string(&got.attributes).unwrap();
         // secret 绝不出现在持久化的 attributes
-        assert!(!stored.contains("SECRET"), "SECRET must not persist: {stored}");
+        assert!(
+            !stored.contains("SECRET"),
+            "SECRET must not persist: {stored}"
+        );
         assert!(!stored.contains("sk-SECRET"));
         assert!(!stored.contains("master-SECRET"));
         assert!(!stored.contains("ghp_GITHUB"));

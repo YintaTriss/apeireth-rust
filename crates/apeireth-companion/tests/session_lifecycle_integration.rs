@@ -10,11 +10,11 @@
 //! - migration 幂等 (V5 重复应用不报错)
 
 use apeireth_core::Episode;
+use apeireth_memory::run_migrations;
 use apeireth_memory::{
     EpisodeStore, SessionLifecycleError, SessionLifecycleStore, SessionScope, SessionState,
-    SqliteMemoryStore, SessionStore as LegacySessionStore,
+    SessionStore as LegacySessionStore, SqliteMemoryStore,
 };
-use apeireth_memory::run_migrations;
 use std::sync::Arc;
 
 fn store() -> Arc<SqliteMemoryStore> {
@@ -53,23 +53,30 @@ fn session_lifecycle_full_path() {
 #[test]
 fn session_invalid_transition_close_then_archive() {
     let s = store();
-    s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
+    s.create_session("s1", None, SessionScope::Global, None, None)
+        .unwrap();
     s.close_session_lifecycle("s1", 0).unwrap();
     // closed 是终态, 不可再 archive
     let err = s.archive_session("s1", 1).unwrap_err();
-    assert!(matches!(err, SessionLifecycleError::IllegalTransition { .. }));
+    assert!(matches!(
+        err,
+        SessionLifecycleError::IllegalTransition { .. }
+    ));
 }
 
 #[test]
 fn session_revision_conflict_rename_race() {
     let s = store();
-    s.create_session("s1", Some("原标题"), SessionScope::Global, None, None).unwrap();
+    s.create_session("s1", Some("原标题"), SessionScope::Global, None, None)
+        .unwrap();
     // worker A rename with rev 0 → ok (rev 0→1)
     s.rename_session("s1", "A 改的", 0).unwrap();
     // worker B 同时用 rev 0 rename → conflict
     let err = s.rename_session("s1", "B 改的", 0).unwrap_err();
     match err {
-        SessionLifecycleError::Conflict { expected, actual, .. } => {
+        SessionLifecycleError::Conflict {
+            expected, actual, ..
+        } => {
             assert_eq!(expected, 0);
             assert_eq!(actual, 1);
         }
@@ -103,7 +110,8 @@ fn session_restart_persistence_reopen() {
 #[test]
 fn session_episode_relation_archived_not_lost() {
     let s = store();
-    s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
+    s.create_session("s1", None, SessionScope::Global, None, None)
+        .unwrap();
     let ep = Episode {
         id: "ep-1".into(),
         timestamp: 1000,
@@ -141,8 +149,11 @@ fn session_legacy_client_compat_old_upsert_readable() {
 #[test]
 fn session_create_duplicate_rejected() {
     let s = store();
-    s.create_session("s1", None, SessionScope::Global, None, None).unwrap();
-    let err = s.create_session("s1", None, SessionScope::Global, None, None).unwrap_err();
+    s.create_session("s1", None, SessionScope::Global, None, None)
+        .unwrap();
+    let err = s
+        .create_session("s1", None, SessionScope::Global, None, None)
+        .unwrap_err();
     assert!(matches!(err, SessionLifecycleError::Conflict { .. }));
 }
 
@@ -160,9 +171,12 @@ fn session_not_found_errors() {
 #[test]
 fn session_list_excludes_archived_by_default() {
     let s = store();
-    s.create_session("active-1", None, SessionScope::Global, None, None).unwrap();
-    s.create_session("active-2", None, SessionScope::Global, None, None).unwrap();
-    s.create_session("to-archive", None, SessionScope::Global, None, None).unwrap();
+    s.create_session("active-1", None, SessionScope::Global, None, None)
+        .unwrap();
+    s.create_session("active-2", None, SessionScope::Global, None, None)
+        .unwrap();
+    s.create_session("to-archive", None, SessionScope::Global, None, None)
+        .unwrap();
     s.archive_session("to-archive", 0).unwrap();
     assert_eq!(s.list_sessions(false).unwrap().len(), 2);
     assert_eq!(s.list_sessions(true).unwrap().len(), 3);

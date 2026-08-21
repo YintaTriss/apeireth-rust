@@ -341,9 +341,7 @@ pub enum GrantDecision {
         expiry: String,
     },
     /// 拒绝 (覆盖但过期/无预算).
-    Deny {
-        reason: String,
-    },
+    Deny { reason: String },
     /// 需批准 (无覆盖 — 走 ApprovalManager).
     RequireApproval,
 }
@@ -465,7 +463,12 @@ mod tests {
             other => panic!("expected RequireApproval, got {other:?}"),
         }
         // 授予 → Allow
-        r.grant(PermissionPack::timed("授权", vec!["ShellExec".into()], 24, None));
+        r.grant(PermissionPack::timed(
+            "授权",
+            vec!["ShellExec".into()],
+            24,
+            None,
+        ));
         match r.evaluate("ShellExec", now_ms()) {
             GrantDecision::Allow { pack_name, .. } => assert_eq!(pack_name, "授权"),
             other => panic!("expected Allow, got {other:?}"),
@@ -483,7 +486,12 @@ mod tests {
     #[test]
     fn phase4_grant_view_no_secret() {
         let r = PackRegistry::new();
-        r.grant(PermissionPack::timed("包", vec!["ShellExec".into()], 1, None));
+        r.grant(PermissionPack::timed(
+            "包",
+            vec!["ShellExec".into()],
+            1,
+            None,
+        ));
         let json = serde_json::to_string(&r.list_grants(now_ms())).unwrap();
         // grant view 不含 secret
         assert!(!json.contains("api_key"));

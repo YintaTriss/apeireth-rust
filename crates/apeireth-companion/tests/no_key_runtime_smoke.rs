@@ -34,8 +34,14 @@ fn example_binary() -> Option<PathBuf> {
         .map(|a| a.join("target"))
         .unwrap_or_else(|| manifest_dir.join("../../../target"));
     let candidates = [
-        target_dir.join("debug").join("examples").join("companion_serve"),
-        target_dir.join("debug").join("examples").join("companion_serve.exe"),
+        target_dir
+            .join("debug")
+            .join("examples")
+            .join("companion_serve"),
+        target_dir
+            .join("debug")
+            .join("examples")
+            .join("companion_serve.exe"),
         // if CARGO_TARGET_DIR override
         PathBuf::from(std::env::var("CARGO_TARGET_DIR").unwrap_or_default())
             .join("debug")
@@ -67,7 +73,12 @@ fn wait_for_boot(port: u16) -> bool {
 
 /// Minimal HTTP/1.0 client over a raw TcpStream (no external dep).
 /// Returns (status_code, body_string).
-fn http_get_raw(port: u16, method: &str, path: &str, body: Option<&str>) -> std::io::Result<(u16, String)> {
+fn http_get_raw(
+    port: u16,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> std::io::Result<(u16, String)> {
     let mut stream = TcpStream::connect_timeout(
         &format!("127.0.0.1:{port}").parse().unwrap(),
         Duration::from_secs(2),
@@ -178,7 +189,10 @@ fn l3_no_key_runtime_smoke_full() {
 
     // Wait for boot (Test 1: process/server boot without provider credential).
     let booted = wait_for_boot(port);
-    assert!(booted, "[L3 Test 1] server must boot without key (no /health within 40s)");
+    assert!(
+        booted,
+        "[L3 Test 1] server must boot without key (no /health within 40s)"
+    );
 
     // ── Test 1+2: /health — success, core healthy, provider unconfigured ──
     let (h_status, h_body) = http_get(port, "/health");
@@ -209,7 +223,11 @@ fn l3_no_key_runtime_smoke_full() {
     let chat = find_cap(&c_body, "chat.completions");
     let chat = chat.expect("[L3 Test 3] chat.completions must be declared");
     assert_eq!(chat["supported"].as_bool(), Some(true), "chat supported");
-    assert_eq!(chat["available"].as_bool(), Some(false), "chat unavailable without key");
+    assert_eq!(
+        chat["available"].as_bool(),
+        Some(false),
+        "chat unavailable without key"
+    );
     assert_eq!(
         chat["reason"].as_str(),
         Some("provider_not_configured"),
@@ -219,7 +237,11 @@ fn l3_no_key_runtime_smoke_full() {
     // core caps: available=true (sessions.create)
     let sess = find_cap(&c_body, "sessions.create").expect("sessions.create declared");
     assert_eq!(sess["supported"].as_bool(), Some(true));
-    assert_eq!(sess["available"].as_bool(), Some(true), "core cap available without key");
+    assert_eq!(
+        sess["available"].as_bool(),
+        Some(true),
+        "core cap available without key"
+    );
     assert!(
         sess.get("reason").map_or(true, |r| r.is_null()),
         "available core cap must have no reason"
@@ -231,14 +253,20 @@ fn l3_no_key_runtime_smoke_full() {
         "/v1/apeireth/sessions",
         serde_json::json!({"title":"l3-smoke","scope":"global"}),
     );
-    assert_eq!(s_status, 201, "[L3 Test 4] session create must succeed (core capability)");
+    assert_eq!(
+        s_status, 201,
+        "[L3 Test 4] session create must succeed (core capability)"
+    );
     assert_eq!(s_body["state"].as_str(), Some("active"));
     assert_eq!(s_body["revision"].as_u64(), Some(0));
     let sid = s_body["id"].as_str().expect("session id").to_string();
 
     // read it back via list (core read capability)
     let (list_status, list_body) = http_get(port, "/v1/apeireth/sessions");
-    assert_eq!(list_status, 200, "[L3 Test 4] session list (read) must succeed");
+    assert_eq!(
+        list_status, 200,
+        "[L3 Test 4] session list (read) must succeed"
+    );
     let sessions = list_body["sessions"].as_array().expect("sessions array");
     assert!(
         sessions.iter().any(|s| s["id"].as_str() == Some(&sid)),
@@ -263,7 +291,10 @@ fn l3_no_key_runtime_smoke_full() {
 
     // server must still be alive after the provider-route hit (no panic/crash)
     let (h2_status, _) = http_get(port, "/health");
-    assert_eq!(h2_status, 200, "[L3 Test 5] server must survive provider-route hit");
+    assert_eq!(
+        h2_status, 200,
+        "[L3 Test 5] server must survive provider-route hit"
+    );
 
     // guard dropped here → child killed
     guard.child.take().map(|mut c| {
