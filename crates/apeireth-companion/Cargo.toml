@@ -96,6 +96,8 @@ tempfile = "3"
 # axum 保持 0.7 (dev-dep, 2026-08 审计): 0.8 是破坏性升级 (路由语法 :id → {id}),
 # P3 有意维持 0.7 — 见 crates/apeireth-api/README.md "依赖版本决策".
 axum = { version = "0.7", features = ["macros"] }
+# W6 前端联调: CorsLayer (与 apeireth-api 同版本 0.5, cors feature)
+tower-http = { version = "0.5", features = ["cors"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 

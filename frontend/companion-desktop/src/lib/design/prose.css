@@ -1,0 +1,180 @@
+/* ============================================================================
+   Apeireth 桌面伙伴 — prose.css
+   Markdown 消息排版（波次 1C 新增：此前 md-* 系列全库零定义，审计 §4.4-2）。
+   类名契约逐一对齐 src/lib/markdown.ts 的产出（renderer + styled replace）：
+     .md-p .md-h(h1-h6) .md-list .md-task .md-quote .md-table .md-hr .md-img
+     .md-code(pre>code.language-*) .md-inline .md-math-error
+   容器类契约对齐 src/lib/MessageContent.svelte 与 features/quick/QuickWindowView.svelte：
+     .md-body(.streaming) .md-caret .typing
+   本文件消费旧令牌（--text/--amber 等）以贴合现行视图；--ap-* 令牌接管是下一波次。
+   ============================================================================ */
+
+/* ---------- 容器 ---------- */
+.md-body {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+
+/* ---------- 段落与标题（markdown.ts:56-57） ---------- */
+.md-p {
+  margin: 0 0 10px;
+}
+h1.md-h, h2.md-h, h3.md-h, h4.md-h, h5.md-h, h6.md-h {
+  margin: 16px 0 8px;
+  line-height: 1.35;
+  color: var(--text);
+}
+h1.md-h { font-size: 19px; }
+h2.md-h { font-size: 17px; }
+h3.md-h { font-size: 15px; }
+h4.md-h, h5.md-h, h6.md-h { font-size: 14px; }
+
+/* ---------- 列表（markdown.ts:58-59, :64；GFM task list 带 checkbox input） ---------- */
+.md-list {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.md-list li { margin: 3px 0; }
+.md-task {
+  list-style: none;
+  padding-left: 4px;
+}
+.md-task input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  accent-color: var(--amber);
+}
+
+/* ---------- 引用 / 分隔线 / 图片（markdown.ts:60, :62-63） ---------- */
+.md-quote {
+  margin: 0 0 10px;
+  padding: 6px 12px;
+  border-left: 2px solid var(--amber-line);
+  background: var(--amber-wash);
+  color: var(--muted);
+  border-radius: 0 6px 6px 0;
+}
+.md-quote > :last-child { margin-bottom: 0; }
+.md-hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 14px 0;
+}
+.md-img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* ---------- 表格（markdown.ts:61；th/td 由 marked 原生产出，无 class） ---------- */
+.md-table {
+  border-collapse: collapse;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.md-table th, .md-table td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+}
+.md-table th {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* ---------- 代码（markdown.ts:10-19） ---------- */
+.md-code {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  background: #0b0d12; /* 近黑面板底（--ap-panel-solid 同值，旧令牌无对应项） */
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  font: 12px/1.6 var(--mono);
+}
+.md-code code {
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+}
+.md-inline {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--amber-hi);
+}
+.md-math-error {
+  color: var(--danger);
+  border-color: rgba(224, 91, 80, 0.4);
+}
+
+/* ---------- 流式光标（MessageContent.svelte:62 / QuickWindowView.svelte:121） ---------- */
+.md-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--amber);
+  animation: ap-caret-blink 1.1s steps(2, start) infinite;
+}
+@keyframes ap-caret-blink {
+  50% { opacity: 0; }
+}
+
+/* ---------- 「正在生成」指示（MessageContent.svelte:66 / QuickWindowView.svelte:123） ----------
+   规范 §5.3：他正在输入 = 光环呼吸，禁止三个点（「三个点是软件，呼吸是存在」）。
+   既有模板产出三个空 <i>：只取第一个做呼吸光标（motion.breathe ✅ 2.8s，
+   opacity 0.22→0.65，index.html:32-36），余者隐藏。 */
+.typing {
+  display: inline-flex;
+  align-items: center;
+  height: 1.2em;
+}
+.typing i {
+  display: block;
+  width: 2px;
+  height: 1em;
+  background: var(--amber);
+  border-radius: 1px;
+  box-shadow: 0 0 8px var(--amber-line);
+  animation: ap-typing-breathe 2.8s ease-in-out infinite;
+}
+.typing i + i { display: none; }
+@keyframes ap-typing-breathe {
+  0%, 100% { opacity: 0.22; }
+  50% { opacity: 0.65; }
+}
+
+/* ============================================================================
+   highlight.js 极简暗色主题（金色调）
+   markdown.ts import 'highlight.js/lib/common' 只产出 hljs-* span，从未引入
+   官方主题 CSS（审计 §4.4-2）；此处手写最少规则覆盖 pre/code 背景与主 token
+   色。作用域限定 .md-code，避免污染全库。
+   ============================================================================ */
+.md-code .hljs-keyword,
+.md-code .hljs-literal,
+.md-code .hljs-selector-tag { color: #ffd27a; }          /* 存在金：关键字 */
+.md-code .hljs-string,
+.md-code .hljs-regexp { color: #e8a33d; }                /* 琥珀：字符串 */
+.md-code .hljs-comment,
+.md-code .hljs-quote { color: #625f69; font-style: italic; }
+.md-code .hljs-number,
+.md-code .hljs-symbol { color: #fff2d1; }                /* 白热：数字 */
+.md-code .hljs-title,
+.md-code .hljs-title.function_,
+.md-code .hljs-section { color: #e8d9b0; }               /* UI 金：函数/标题 */
+.md-code .hljs-attr,
+.md-code .hljs-attribute,
+.md-code .hljs-variable,
+.md-code .hljs-template-variable { color: #7d9cc0; }     /* 深空蓝系：属性/变量 */
+.md-code .hljs-built_in,
+.md-code .hljs-type { color: #ffd27a; }
+.md-code .hljs-meta { color: #96919c; }
+.md-code .hljs-emphasis { font-style: italic; }
+.md-code .hljs-strong { font-weight: 700; }

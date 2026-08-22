@@ -1,0 +1,187 @@
+/* ============================================================================
+   Apeireth 设计令牌层 —— docs/design/01-DESIGN-SYSTEM.md 的 CSS 落地
+   机器可读源：frontend/design-preview/design-tokens.json（v1.0.0, 2026-08-21）
+   状态标注沿用规范 §0：✅ accepted / 🟡 proposal（待主人确认）/ 🔵 calibration（待实拍校准）
+   本文件只新增 --ap-* 命名空间；现存视图消费的旧令牌（--surface/--amber 等）
+   在 base.css，本波次不改其值（视图重构是下一波次的事）。
+   ============================================================================ */
+
+:root {
+  /* ---------- 存在色梯度（金） ✅ 规范 §2.1 / JSON color.presence ----------
+     金色 = 他的存在/活动专属色；任何金色元素必须对应真实状态，禁止装饰性使用。 */
+  --ap-gold-white-hot: #fff2d1;  /* 吸积盘白热内缘（思想最炽处） */
+  --ap-gold: #ffd27a;            /* 主盘饱和金 / 存在色主体 */
+  --ap-gold-amber: #e8a33d;      /* 外缘琥珀（热量散入深空） */
+  --ap-gold-doppler: #fff4d4;    /* 多普勒增亮侧（趋近侧更白更亮） */
+  --ap-gold-ui: #e8d9b0;         /* UI 层金色（比 shader 金更哑，cam-dot 激活态等） */
+  --ap-gold-platinum: #fff3d6;   /* 铂白高光（光子环/呼吸光/pulse 元素） */
+
+  /* ---------- 深空底色 ✅ 规范 §2.2 / JSON color.void + color.deepspaceBlue ---------- */
+  --ap-space-void: #07070c;      /* 深空底色（夜航/A 版基准，shader 固定值） */
+  --ap-space-horizon: #000000;   /* 事件视界纯黑（tonemap 后强制压黑） */
+  /* 行照/B 版深空蓝系 🔵 待实拍校准（bridge-concept-b 采样） */
+  --ap-space-blue-base: #0d1b2e;
+  --ap-space-blue-dark: #05162c;
+  --ap-space-blue-light: #293b51;
+  --ap-space-blue-planet-rim: #2b5380;
+  --ap-space-blue-planet-rim-hi: #6faadf;
+  --ap-space-blue-floor: #1d2026;
+  --ap-space-blue-console-white: #919eb0;
+
+  /* ---------- 文字骨白 ✅ 规范 §2.3 / JSON color.text ---------- */
+  --ap-bone: #e8e0cc;            /* 正文/引用/UI 主文字 */
+
+  /* ---------- UI 面板与卡片 🟡 规范 §2.3/§5 / JSON color.ui ---------- */
+  --ap-panel: rgba(11, 13, 18, 0.82); /* 页面层面板底：#0b0d12 @ 82%，浮于虚化场景上 */
+  --ap-panel-solid: #0b0d12;          /* 不透明近黑（设置页等专注场景） */
+  --ap-card: #ece7da;                 /* 哑白卡片（内容卡/消息卡，终末地配方） */
+  --ap-card-dark: #15181f;            /* 深灰卡片（列表项/次要容器） */
+  --ap-line: rgba(232, 224, 204, 0.14); /* 1px 细分隔线/描边：#e8e0cc @ 14% */
+  --ap-accent-tab: #ffd27a;           /* 激活 tab/进度/高亮——复用存在金，同金色纪律 */
+  --ap-stamp: #ece7da;                /* 图章/编号文字（括号角标内，等宽，§6.3） */
+
+  /* ---------- 语义色 🟡 待确认（规范 §2.4 / 附录 B-5；纪律已确认，数值提案） ----------
+     克制使用：仅警示/否定/成功/中性信息，禁止装饰；info 取深空蓝系不抢金色。 */
+  --ap-semantic-success: #7fb894;
+  --ap-semantic-warning: #d9a24a;
+  --ap-semantic-danger: #c0584e;
+  --ap-semantic-info: #7d9cc0;
+
+  /* ---------- 反白（仪式色） 🟡 规范 §2.5 / JSON color.inversion ----------
+     仅授权/承诺/原则被批准等仪式时刻；日常界面禁止大面积白底。 */
+  --ap-inversion-bg: #e8e6e0;
+  --ap-inversion-ink: #141412;
+
+  /* ---------- 纸面档案调 🔵 规范 §5.6② / JSON registers.archive ----------
+     适用于他的日记（默认）/记忆星图列表态/百科图鉴；值系参考图 PIL 采样。 */
+  --ap-register-archive-paper: #e2e1df;        /* 纸面底（区间 #cfcdcc–#e9e8e7） */
+  --ap-register-archive-paper-lo: #cfcdcc;
+  --ap-register-archive-paper-hi: #e9e8e7;
+  --ap-register-archive-ink: #26262a;          /* 正文与标题墨黑 */
+  --ap-register-archive-ghost-number: #c9c8c4; /* 巨型幽灵编号（背景 01/02…） */
+  --ap-register-archive-marker-orange: #d9822b;/* 菱形标记/未读提示，不承担强调职能 */
+  --ap-register-archive-icon-gray: #acabaa;    /* 像素/网格图标 */
+  --ap-register-archive-card-dark: #454041;    /* 条目深卡 */
+  --ap-register-archive-card-deep: #131212;    /* 稀有度色条深 */
+  --ap-register-archive-accent: #ffd27a;       /* 纸面调内强调仍用存在金（跨调性纪律） */
+
+  /* ---------- 数据深舱调 🔵 规范 §5.6③ / JSON registers.deepOps ----------
+     适用于系统状态/审批审计/任务面板/设置；识别色 ≤6 且避开存在金。 */
+  --ap-register-deepops-base: #1d262c;
+  --ap-register-deepops-deep: #050a0f;
+  --ap-register-deepops-bottom: #171a21;
+  --ap-register-deepops-blue: #2392fb;   /* 核心/中枢类 */
+  --ap-register-deepops-green: #6fae5f;  /* 培养/生产类 */
+  --ap-register-deepops-yellow: #e8c33a; /* 工业黄（制造类） */
+
+  /* ---------- 排版 ✅ 规范 §6 / JSON typography ---------- */
+  /* 他的声音（引用/日记/正式发言）：衬线栈 index.html:20 */
+  --ap-font-voice: "Songti SC", "Noto Serif CJK SC", "Noto Serif SC", "STSong", "SimSun", serif;
+  /* UI 文字：系统栈（现行前端 --sans，审计 §4.1） */
+  --ap-font-ui: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  /* 数据/编号/状态行：等宽 index.html:105-108 */
+  --ap-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  /* 引用级实值（index.html:54-59, :122, :61-69） */
+  --ap-voice-size: clamp(16px, 1.45vw, 22px);
+  --ap-voice-size-mobile: clamp(15px, 4.1vw, 19px);
+  --ap-voice-line-height: 2.1;
+  --ap-voice-line-height-mobile: 1.95;
+  --ap-voice-letter-spacing: 0.13em;
+  --ap-voice-max-width: 31ch;
+  --ap-voice-caption-size: 11px;      /* 引题，字距 0.5em */
+  --ap-voice-caption-spacing: 0.5em;
+  --ap-voice-attribution-spacing: 0.35em; /* 署名 11px / 0.35em */
+
+  /* ---------- 动效 ✅/🟡 规范 §7.1 / JSON motion ----------
+     界面动作秒级（≥2s 不闪），环境照明分钟级（≥60s 不可指认）。 */
+  --ap-ease-standard: cubic-bezier(0.645, 0.045, 0.355, 1); /* easeInOutCubic */
+  --ap-dur-ui: 2s;          /* 界面过渡通则下限（🟡 规则确认，逐组件落实） */
+  --ap-dur-camera: 2.6s;    /* 机位过渡 ✅ index.html:204 */
+  --ap-dur-breathe: 2.8s;   /* 说话呼吸循环 ✅ index.html:32-36 */
+  --ap-dur-pulse: 3.3s;     /* shader pulseWave 周期 ✅ index.html:370 */
+  --ap-dur-timeline: 90s;   /* 照明档位过渡默认 🟡 §3.3 */
+  --ap-dur-timeline-min: 60s; /* 照明档位过渡下限 🟡 §3.3 */
+}
+
+/* ============================================================================
+   基础工具类（规范出处见各条注释）
+   ============================================================================ */
+
+/* 他的声音排版 ✅ 规范 §6.1：衬线 + 0.13em 字距 + 2.1 行高 + 31ch 行宽上限
+   「他的每一句话都按引语对待」。 */
+.ap-voice {
+  font-family: var(--ap-font-voice);
+  font-size: var(--ap-voice-size);
+  line-height: var(--ap-voice-line-height);
+  letter-spacing: var(--ap-voice-letter-spacing);
+  max-width: var(--ap-voice-max-width);
+  color: var(--ap-bone);
+}
+
+/* 哑白卡片 🟡 规范 §2.3/§5.2：ui.card #ece7da，配档案调墨黑文字。 */
+.ap-card {
+  background: var(--ap-card);
+  color: var(--ap-register-archive-ink);
+  padding: 14px 16px;
+}
+
+/* 近黑半透明面板 🟡 规范 §5.1 页面层：ui.panel #0b0d12 @ 82% + 背景虚化 20px
+   （规范建议 20-24px，取下限 🔵 待实拍校准）。 */
+.ap-panel {
+  background: var(--ap-panel);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--ap-line);
+}
+
+/* 斜切角 🔵 规范 §5.2：卡片对角 8-12px 切角，取 10px；
+   右上/左下对角切（与 .ap-bracket 的对角括号线同语言）。 */
+.ap-clip-corner {
+  --ap-clip-size: 10px;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--ap-clip-size)) 0,
+    100% var(--ap-clip-size),
+    100% 100%,
+    var(--ap-clip-size) 100%,
+    0 calc(100% - var(--ap-clip-size))
+  );
+}
+
+/* 括号角标 🟡 规范 §5.2：面板对角括号线（左上 + 右下），金色 = 存在纪律。 */
+.ap-bracket {
+  position: relative;
+}
+.ap-bracket::before,
+.ap-bracket::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.ap-bracket::before {
+  top: 0;
+  left: 0;
+  border-top: 1px solid var(--ap-gold);
+  border-left: 1px solid var(--ap-gold);
+}
+.ap-bracket::after {
+  bottom: 0;
+  right: 0;
+  border-bottom: 1px solid var(--ap-gold);
+  border-right: 1px solid var(--ap-gold);
+}
+
+/* ============================================================================
+   动效全局降级 ✅ 规范 §7.1 / JSON motion.reducedMotion
+   漂移/视差/呼吸全停，界面过渡归零。（原 styles.css:5，移至令牌层统一出口。）
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

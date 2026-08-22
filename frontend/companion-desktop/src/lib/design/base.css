@@ -1,0 +1,339 @@
+/* ============================================================================
+   Apeireth 桌面伙伴 — base.css
+   旧 "Pattern" 令牌 + 现存视图仍在消费的全局类（收敛自 styles.css:3 压缩块与
+   app.css，2026-08-21 波次 1C）。每条规则注明使用点；零使用点的死样式已删除
+   （删除统计见 _research_mem/frontend-audit-2026-08-21.md 后续收敛报告）。
+   新设计令牌（--ap-*）在 tokens.css；markdown 消息排版在 prose.css。
+   ============================================================================ */
+
+/* ---------- 旧 Pattern 设计令牌（现存视图消费，值保持不变；下一波次映射到 --ap-*） ---------- */
+:root {
+  --bg: #0e0d10;
+  --surface: #151419;
+  --surface-2: #1b1a20;
+  --surface-3: #242229;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.15);
+  --text: #ebe8e2;
+  --muted: #96919c;
+  --faint: #625f69;
+  --amber: #e7a23b;
+  --amber-hi: #f1b95d;
+  --amber-wash: rgba(231, 162, 59, 0.12);
+  --amber-line: rgba(231, 162, 59, 0.36);
+  --green: #4db380;
+  --green-wash: rgba(77, 179, 128, 0.13);
+  --blue: #70a3dc;
+  --blue-wash: rgba(112, 163, 220, 0.13);
+  --danger: #e05b50;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+/* 亮色令牌覆写。当前休眠：全 src 无代码设置 data-theme（审计 §4.3），保留待用。 */
+html[data-theme="day"] {
+  --bg: #e8e7e4;
+  --surface: #f7f6f3;
+  --surface-2: #fff;
+  --surface-3: #eeece9;
+  --line: rgba(25, 20, 30, 0.09);
+  --line-strong: rgba(25, 20, 30, 0.16);
+  --text: #28242c;
+  --muted: #6f6975;
+  --faint: #aaa5ae;
+  --amber: #b77712;
+  --amber-hi: #9d650e;
+  --amber-wash: rgba(183, 119, 18, 0.1);
+  --amber-line: rgba(183, 119, 18, 0.35);
+  --green: #25845a;
+  --green-wash: rgba(37, 132, 90, 0.1);
+  --blue: #3f71aa;
+  --blue-wash: rgba(63, 113, 170, 0.1);
+  --danger: #c33e35;
+  --shadow: 0 24px 70px rgba(40, 32, 50, 0.18);
+}
+
+/* ---------- 基础重置（原压缩块开头，全部元素级，全局生效） ---------- */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.55 var(--sans);
+  letter-spacing: 0;
+  overflow: hidden;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+
+/* 按钮全局基线：.primary-button/.quiet-button 依赖此底（各视图通用）。
+   使用点：App.svelte 及全部 view 的按钮元素。 */
+button {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  border-radius: 6px;
+  padding: 7px 12px;
+}
+
+/* ---------- 页头（PageHeader.svelte 无 scoped 样式，全局唯一定义） ----------
+   使用点：components/PageHeader.svelte；经 ConversationsView / MemoryView /
+   ActivityView / ToolsView / SettingsView 以 props 传入渲染。 */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 26px 42px 16px;
+}
+.eyebrow {
+  margin: 0 0 3px;
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.page-head h1 {
+  font-size: 24px;
+  line-height: 1.2;
+  margin: 0;
+  letter-spacing: 0;
+}
+.subtitle {
+  margin: 5px 0 0;
+  color: var(--muted);
+}
+
+/* ---------- 通用按钮变体 ----------
+   .primary-button 使用点：App.svelte（stop-btn/send-btn）、QuickWindowView
+   （quick-send-btn）、ConversationsView / MemoryView / SettingsView / ToolsView。
+   .quiet-button 只有 hover 规则（基线即上面的 button 全局）；
+   使用点：App.svelte（new-chat-btn）、ConversationsView / MemoryView /
+   ActivityView / SettingsView / ToolsView。 */
+.primary-button {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #1b1409;
+  font-weight: 650;
+}
+.primary-button:hover {
+  background: var(--amber-hi);
+}
+.quiet-button:hover {
+  border-color: var(--amber-line);
+  color: var(--amber);
+}
+
+/* ---------- 行内小按钮 ----------
+   使用点：.text-action —— App.svelte（stop-action）、components/TaskCard.svelte；
+   .icon-action —— App.svelte 聊天头部新建按钮（其 scoped 未覆盖 padding/font-size，
+   此处 padding:0 为必需残量）。 */
+.text-action, .icon-action {
+  border-color: var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 4px 9px;
+}
+.icon-action {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+/* ---------- 徽章 ----------
+   使用点：components/TaskCard.svelte（无 scoped，amber/green/dim 三态）。
+   （.badge.blue 零使用点，已删；StatusBadge.svelte 为独立组件自带 scoped。） */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 99px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.badge.amber { color: var(--amber); background: var(--amber-wash); }
+.badge.green { color: var(--green); background: var(--green-wash); }
+.badge.dim { color: var(--muted); background: var(--surface-3); }
+
+/* ---------- 输入框残量 ----------
+   .composer 使用点：App.svelte。布局主体由其 scoped 定义；以下三个属性
+   scoped 未设置（margin/align-items/gap），为当前生效残量，必须保留。 */
+.composer {
+  margin: 12px max(28px, calc((100% - 870px) / 2)) 18px;
+  align-items: flex-end;
+  gap: 10px;
+}
+/* .composer-actions 使用点：App.svelte composer-toolbar 内（无 scoped 定义）。 */
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* ---------- 用户消息气泡 ----------
+   使用点：App.svelte .message-row.user 内嵌 MessageContent 的 p.user-text。
+   该复合选择器优先级（0-3-1）高于 MessageContent scoped 的 .user-text（0-2-0），
+   当前生效值即此（圆角 8px，注意与 scoped 的 10px 不同——收敛保持现状）。 */
+.message-row.user .message-body p.user-text {
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px 8px 2px 8px;
+  margin: 0;
+  line-height: 1.7;
+}
+
+/* ---------- 错误横幅 ----------
+   使用点：QuickWindowView.svelte（无 scoped）；App.svelte 内的同名元素
+   由其 scoped 定义覆盖（flex 布局 + 半透明 danger 底），互不影响。 */
+.error-banner {
+  margin: 0 28px;
+  padding: 10px 14px;
+  background: var(--danger);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* ---------- 状态点 ----------
+   使用点：components/StatusDot.svelte（无 scoped，4 尺寸 × off/active）。 */
+.status-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--green);
+}
+.status-dot.off { background: var(--faint); }
+.status-dot.active { background: var(--amber); }
+.status-dot.tiny { width: 8px; height: 8px; }
+.status-dot.small { width: 10px; height: 10px; }
+.status-dot.large { width: 16px; height: 16px; }
+
+/* ---------- 快捷窗（Spotlight 模式） ----------
+   使用点：features/quick/QuickWindowView.svelte（整窗无 scoped，全部依赖此处）。 */
+.quick-window-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: rgba(21, 20, 25, 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--amber-line);
+  border-radius: 12px;
+  padding: 14px 18px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.quick-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  user-select: none;
+  cursor: grab;
+}
+.quick-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--amber);
+  font-weight: 600;
+}
+.quick-close-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+}
+.quick-close-btn:hover { color: var(--danger); }
+.quick-input-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 4px 8px 4px 12px;
+}
+.quick-input-container:focus-within {
+  border-color: var(--amber-line);
+  box-shadow: 0 0 0 2px var(--amber-wash);
+}
+.quick-input-container input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+.quick-send-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--amber);
+  color: #19120a;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.quick-tags-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.quick-tag {
+  border: 1px solid var(--line);
+  background: var(--surface-3);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.quick-tag:hover {
+  border-color: var(--amber-line);
+  color: var(--amber);
+}
+.quick-response-area {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  max-height: 220px;
+}
+
+/* ---------- 窄屏适配（原压缩块 media 查询的活选择器残量） ----------
+   保留仍存活的三条：body 滚动解锁、.page-head 与 .composer 的边距收紧；
+   其余引用死类（.rail/.nav-item/.chat-stream/.statusbar 等）的规则已删。 */
+@media (max-width: 800px) {
+  body { overflow: auto; }
+  .page-head { padding-left: 20px; padding-right: 20px; }
+  .composer { margin-left: 18px; margin-right: 18px; }
+}
+
+/* ---------- 伴随体/快捷透明窗钩子 ----------
+   使用点：features/quick/QuickWindowView.svelte onMount 挂/卸该类（quick 透明窗）；
+   未来桌宠伴随体窗（src-tauri 透明窗，审计 §7）复用同一钩子。 */
+html.companion-bg, html.companion-bg body {
+  background: transparent !important;
+  overflow: hidden;
+}

@@ -1,0 +1,65 @@
+/* ============================================================================
+   Apeireth 桌面伙伴 — bridge.css（波次 2：舰桥对话台整合新增全局类）
+   使用点纪律沿用 lib/design/base.css：每条规则注明使用点。
+   本文件只放「跨组件且无 scoped 宿主」的全局类；App.svelte 壳层样式在其 scoped。
+   ============================================================================ */
+
+/* ---------- 旋转动画类 ----------
+   使用点：components/ExecutionTimeline.svelte（Loader2，running/pending 步骤图标）、
+           features/quick/QuickWindowView.svelte（Loader2，快捷窗发送中）。
+   1C 收敛后该类全库零定义（1C 报告遗留项），本波补齐统一实现。 */
+.spinner {
+  animation: ap-spinner-rotate 0.9s linear infinite;
+  transform-origin: center;
+}
+@keyframes ap-spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- 任务卡片（深舱调基础样式，规范 §5.6③） ----------
+   使用点：components/TaskCard.svelte（整组件无 scoped，全部依赖此处）。
+   1C 收敛后 .task-card/.task-card-head 全库零定义（1C 报告遗留项），本波补齐。
+   左缘识别色取深舱蓝（模块种类语义）；终态/待审批覆写为语义色（§2.4 纪律）。 */
+.task-card {
+  background: var(--ap-register-deepops-base, #1d262c);
+  border: 1px solid var(--ap-line);
+  border-left: 2px solid var(--ap-register-deepops-blue, #2392fb);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: var(--ap-bone);
+  margin: 8px 0;
+  max-width: 460px;
+}
+.task-card[data-status="done"] { border-left-color: var(--ap-semantic-success); }
+.task-card[data-status="failed"],
+.task-card[data-status="cancelled"] { border-left-color: var(--ap-semantic-danger); }
+.task-card[data-status="awaiting_approval"] { border-left-color: var(--ap-semantic-warning); }
+.task-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ap-bone);
+}
+.task-card-head > svg { color: var(--ap-register-deepops-blue, #2392fb); flex: none; }
+.task-card-head strong { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; }
+.task-card p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(232, 224, 204, 0.66);
+}
+.task-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ap-line);
+}
+.task-card footer small {
+  font-family: var(--ap-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: rgba(232, 224, 204, 0.4);
+}

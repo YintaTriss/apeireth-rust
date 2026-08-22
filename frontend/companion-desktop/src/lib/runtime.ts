@@ -202,7 +202,7 @@ export async function checkHealth(baseUrl: string): Promise<boolean> {
 }
 
 /** 深度多子系统健康检测，真实探测后端各项能力 */
-export async function checkHealthDetailed(baseUrl: string, apiKey: string = ''): Promise<RuntimeHealthReport> {
+export async function checkHealthDetailed(baseUrl: string, apiKey: string = '', model?: string): Promise<RuntimeHealthReport> {
   const base = normalizeBaseUrl(baseUrl);
   const subsystems: SubsystemStatus[] = [];
   const startAll = performance.now();
@@ -324,7 +324,10 @@ export async function checkHealthDetailed(baseUrl: string, apiKey: string = ''):
     latencyMs: overallLat,
     lastChecked: Date.now(),
     subsystems,
-    model: 'MiniMax-M3',
+    // 修复硬编码 'MiniMax-M3': 优先调用方传入, 否则读本地持久化配置 (loadConfig
+    // 自带 'MiniMax-M3' 默认值兜底). App/Settings 两处调用点的 config 均源自
+    // loadConfig, 无需改调用侧即可正确反映 config.model.
+    model: model || loadConfig().model,
   };
 }
 
@@ -390,6 +393,89 @@ export async function streamChat(
   let fullText = '';
   const currentTools: Map<string, ToolCallDetails> = new Map();
 
+  // W6 CoT 增量分流 (契约 §2.3): MiniMax 把 CoT 嵌在 delta.content 的
+  // <think>…</think> / <!-- … --> 标记里, 边界标记可能跨 chunk 切分.
+  // think/comment 段 → onReasoningDelta (不进可见正文), 其余 → onDelta.
+  // 对齐后端非流式链路的 extract_minimax_cot 剥离语义 (companion_serve.rs:1007-1037).
+  const COT_OPEN: Array<readonly [string, 'think' | 'comment']> = [['<think>', 'think'], ['<!--', 'comment']];
+  const COT_CLOSE: Record<'think' | 'comment', string> = {think: '</think>', comment: '-->'};
+  let cotMode: 'text' | 'think' | 'comment' = 'text';
+  let cotHold = '';
+  const emitVisible = (text: string): void => {
+    if (!text) return;
+    fullText += text;
+    callbacks.onDelta?.(text);
+  };
+  const emitReasoning = (text: string): void => {
+    if (!text) return;
+    callbacks.onReasoningDelta?.(text);
+  };
+  /** 留住 s 末尾可能是 marker 前缀的片段 (跨 chunk), 返回留守长度 */
+  const holdTail = (s: string, marker: string): number => {
+    const max = Math.min(marker.length - 1, s.length);
+    for (let len = max; len > 0; len--) {
+      if (marker.startsWith(s.slice(s.length - len))) return len;
+    }
+    return 0;
+  };
+  const holdTailAny = (s: string): number => {
+    let best = 0;
+    for (const [marker] of COT_OPEN) best = Math.max(best, holdTail(s, marker));
+    return best;
+  };
+  function feedCot(raw: string, flush = false): void {
+    let s = cotHold + raw;
+    cotHold = '';
+    while (s) {
+      if (cotMode === 'text') {
+        let idx = -1;
+        let mode: 'think' | 'comment' = 'think';
+        let openLen = 0;
+        for (const [marker, m] of COT_OPEN) {
+          const i = s.indexOf(marker);
+          if (i >= 0 && (idx < 0 || i < idx)) {
+            idx = i;
+            mode = m;
+            openLen = marker.length;
+          }
+        }
+        if (idx < 0) {
+          let emit = s;
+          if (!flush) {
+            const hold = holdTailAny(s);
+            if (hold > 0) {
+              cotHold = s.slice(s.length - hold);
+              emit = s.slice(0, s.length - hold);
+            }
+          }
+          emitVisible(emit);
+          return;
+        }
+        emitVisible(s.slice(0, idx));
+        cotMode = mode;
+        s = s.slice(idx + openLen);
+      } else {
+        const close = COT_CLOSE[cotMode];
+        const i = s.indexOf(close);
+        if (i < 0) {
+          let emit = s;
+          if (!flush) {
+            const hold = holdTail(s, close);
+            if (hold > 0) {
+              cotHold = s.slice(s.length - hold);
+              emit = s.slice(0, s.length - hold);
+            }
+          }
+          emitReasoning(emit);
+          return;
+        }
+        emitReasoning(s.slice(0, i));
+        cotMode = 'text';
+        s = s.slice(i + close.length);
+      }
+    }
+  }
+
   try {
     while (true) {
       const {done, value} = await reader.read();
@@ -428,10 +514,9 @@ export async function streamChat(
           const choice = json.choices?.[0];
           const delta = choice?.delta;
 
-          // 1. Text delta
+          // 1. Content delta (经 CoT 分流: think/comment 段 → reasoning-delta)
           if (delta?.content) {
-            fullText += delta.content;
-            callbacks.onDelta?.(delta.content);
+            feedCot(delta.content);
           }
 
           // 2. Reasoning delta
@@ -792,10 +877,31 @@ export async function fetchGraphData(config: ApeirethConfig): Promise<{facts: Me
   const res = await fetch(`${normalizeBaseUrl(config.baseUrl)}/v1/panel/graph`, {
     headers: config.apiKey ? {Authorization: `Bearer ${config.apiKey}`} : {},
   });
-  const data = (await checkJson(res)) as {facts?: Array<{id: string; timestamp: number; role: string; content: string; session_id: string}>; links?: Array<{id: string; timestamp: number; role: string; content: string; session_id: string}>};
+  // G3 修复: 后端 facts/links 是图谱 JSON (panel_readonly.rs:294-314, 契约 §4.5) —
+  // facts 形如 {id, subject, predicate, object, importance}, links 形如 {id, from, to, weight},
+  // 旧代码按 episode 形 {content} 解析 → MemoryView 渲染 undefined 空白. 在此组装可读文本.
+  const data = (await checkJson(res)) as {
+    facts?: Array<{id?: string; subject?: string; predicate?: string; object?: string; importance?: number}>;
+    links?: Array<{id?: string; from?: string; to?: string; weight?: number}>;
+  };
   return {
-    facts: (data.facts || []).map((e) => ({id: e.id, timestamp: e.timestamp, role: e.role, content: e.content, sessionId: e.session_id})),
-    links: (data.links || []).map((e) => ({id: e.id, timestamp: e.timestamp, role: e.role, content: e.content, sessionId: e.session_id})),
+    facts: (data.facts || []).map((f, i) => ({
+      id: f.id || `factg-${i}`,
+      timestamp: 0, // 图谱事实无时间戳 (后端不投影), view 侧按 0 隐藏时间行
+      role: 'fact',
+      content: [f.subject, f.predicate, f.object].filter(Boolean).join(' · ') || '(空事实)',
+      sessionId: 'graph',
+      category: 'fact',
+      importance: typeof f.importance === 'number' ? f.importance : undefined,
+    })),
+    links: (data.links || []).map((l, i) => ({
+      id: l.id || `link-${i}`,
+      timestamp: 0,
+      role: 'link',
+      content: `${l.from ?? '?'} → ${l.to ?? '?'}${typeof l.weight === 'number' ? ` (权重 ${l.weight})` : ''}`,
+      sessionId: 'graph',
+      category: 'link',
+    })),
   };
 }
 
@@ -804,18 +910,38 @@ export async function fetchAuditLogs(config: ApeirethConfig, limit = 100): Promi
   const res = await fetch(`${normalizeBaseUrl(config.baseUrl)}/v1/panel/audit?limit=${limit}`, {
     headers: config.apiKey ? {Authorization: `Bearer ${config.apiKey}`} : {},
   });
-  const data = (await checkJson(res)) as {records?: Array<{id?: string; timestamp?: number; action?: string; tool?: string; status?: string; detail?: string}>};
-  return (data.records || []).map((r, i) => ({
-    id: r.id || `audit-${r.timestamp || Date.now()}-${i}`,
-    timestamp: r.timestamp ? (r.timestamp > 1e11 ? r.timestamp : r.timestamp * 1000) : Date.now(),
-    category: (r.tool ? 'tool' : 'runtime') as ActivityItem['category'],
-    title: r.tool ? `工具调用: ${r.tool}` : (r.action || '操作记录'),
-    summary: r.detail || r.action || '系统操作留痕',
-    source: 'audit',
-    severity: r.status === 'failed' || r.status === 'error' ? 'error' : 'info',
-    detail: JSON.stringify(r, null, 2),
-    raw: r,
-  }));
+  // G4 修复: 后端 ToolCallRecord 字段是 tool_name / started_at_ms / status:"failure"
+  // (record.rs:43-80, 契约 §4.7), 旧代码期望 timestamp/tool/'failed',
+  // 导致时间恒为"现在"、标题恒"操作记录"、失败不显红. 在此适配映射, view 不动.
+  const data = (await checkJson(res)) as {
+    records?: Array<{
+      id?: string;
+      tool_name?: string;
+      tool?: string;
+      action?: string;
+      started_at_ms?: number;
+      timestamp?: number;
+      status?: string;
+      success?: boolean;
+      detail?: string;
+    }>;
+  };
+  return (data.records || []).map((r, i) => {
+    const toolName = r.tool_name || r.tool;
+    const rawTs = r.started_at_ms ?? r.timestamp;
+    const failed = r.status === 'failure' || r.status === 'failed' || r.status === 'error' || r.success === false;
+    return {
+      id: r.id || `audit-${rawTs || Date.now()}-${i}`,
+      timestamp: rawTs ? (rawTs > 1e11 ? rawTs : rawTs * 1000) : Date.now(),
+      category: (toolName ? 'tool' : 'runtime') as ActivityItem['category'],
+      title: toolName ? `工具调用: ${toolName}` : (r.action || '操作记录'),
+      summary: r.detail || r.action || (toolName ? `工具调用: ${toolName}` : '系统操作留痕'),
+      source: 'audit' as ActivityItem['source'],
+      severity: (failed ? 'error' : 'info') as ActivityItem['severity'],
+      detail: JSON.stringify(r, null, 2),
+      raw: r,
+    };
+  });
 }
 
 /** 获取工具列表 (严格请求后端真实注册表端点) */
@@ -856,7 +982,9 @@ export async function fetchApprovalRequests(config: ApeirethConfig): Promise<App
   const res = await fetch(`${normalizeBaseUrl(config.baseUrl)}/v1/apeireth/approval-requests`, {
     headers: config.apiKey ? {Authorization: `Bearer ${config.apiKey}`} : {},
   });
-  const list = (await checkJson(res)) as Array<{
+  // G1 修复: 后端返回 {count, requests, note} 对象 (approval_requests.rs:229-242,
+  // 契约 §3.2), 不是裸数组 — 旧代码 Array.isArray(对象) 恒 false, 待批授权永不显示.
+  interface ApprovalRequestRow {
     id?: string;
     chain?: string;
     rev?: number;
@@ -867,8 +995,10 @@ export async function fetchApprovalRequests(config: ApeirethConfig): Promise<App
     created_at?: number;
     requested_at?: number;
     status?: string;
-  }>;
-  if (!Array.isArray(list)) return [];
+  }
+  const data = (await checkJson(res)) as {count?: number; requests?: ApprovalRequestRow[]; note?: string} | ApprovalRequestRow[];
+  const list: ApprovalRequestRow[] = Array.isArray(data) ? data : Array.isArray(data?.requests) ? data.requests : [];
+  if (!list.length) return [];
   return list.map((item, idx) => ({
     id: item.id || `apreq-${idx}`,
     chain: item.chain,

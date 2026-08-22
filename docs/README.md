@@ -10,6 +10,7 @@ docs/
 ├── 02-guides/           # 使用（快速开始/用户手册/部署/开发）
 ├── 03-reference/        # 参考（crates/API/术语）
 ├── 04-internal/         # 内部工作文档（台账/设计意图/团队）
+├── design/              # 前端设计（设计系统/交接/开场动画封存档案）
 └── archive/             # 历史归档（stage*/r*/adr/conventions... 保留不展示）
 ```
 
@@ -33,6 +34,9 @@ docs/
 | [04-internal/design-intent.md](04-internal/design-intent.md) | 设计意图与拍板历史 |
 | [04-internal/backlog.md](04-internal/backlog.md) | 唯一权威台账 |
 | [04-internal/release-plan.md](04-internal/release-plan.md) | 发布计划 |
+| [design/01-DESIGN-SYSTEM.md](design/01-DESIGN-SYSTEM.md) | 前端设计系统（视觉令牌/层序规范）|
+| [design/frontend-handoff.md](design/frontend-handoff.md) | 前端交接（现状/联调/坑与纪律/欠账，接手先读）|
+| [design/intro-animation.md](design/intro-animation.md) | 开场动画「火之文明史」封存档案（2026-08-22 起默认关闭）|
 
 ## Archive
 

@@ -23,6 +23,7 @@ use std::collections::{HashSet, VecDeque};
 use std::time::Duration;
 
 use crate::actions::{select_action, Action};
+use crate::presence::InitiativeGate;
 use crate::Bond;
 
 // ============================================================
@@ -390,6 +391,9 @@ pub struct EmergenceLoop<R: RelationshipState> {
     day_key: String,
     /// 本地轨迹 (诚实: 待桥接到 Timeline/memory)
     pub history: VecDeque<HistoryEntry>,
+    /// 最近一次 tick「保持安静」的门控原因留痕 (presence 内心状态频道观测口;
+    /// 决定开口时清零). 纯记录, 不参与决策 — 2026-08-21 增量添加.
+    last_hold: Option<InitiativeGate>,
 }
 
 #[derive(Debug, Clone)]
@@ -412,6 +416,7 @@ impl<R: RelationshipState> EmergenceLoop<R> {
             initiatives_today: 0,
             day_key: String::new(),
             history: VecDeque::with_capacity(64),
+            last_hold: None,
         }
     }
 
@@ -426,6 +431,12 @@ impl<R: RelationshipState> EmergenceLoop<R> {
     /// 当前关系深度 (0..1).
     pub fn depth(&self) -> f64 {
         self.relationship.depth()
+    }
+
+    /// 最近一次 tick 被机制层门控拦下的原因 (开口成功 = None).
+    /// presence 内心状态频道观测口 (2026-08-21): 只读, 0 副作用.
+    pub fn last_hold(&self) -> Option<InitiativeGate> {
+        self.last_hold
     }
 
     /// 观察一次用户交互 (无论主动/被动), 喂给节律学习 + 刷新最后接触时间.
@@ -447,14 +458,17 @@ impl<R: RelationshipState> EmergenceLoop<R> {
 
         // 门禁 0: 用户显式「不打扰」
         if self.boundaries.user_quiet {
+            self.last_hold = Some(InitiativeGate::UserQuiet); // presence 留痕
             return None;
         }
         // 门禁 1: 安静窗口
         if self.boundaries.in_quiet_window(minutes_now) {
+            self.last_hold = Some(InitiativeGate::QuietHours); // presence 留痕
             return None;
         }
         // 门禁 2: 频率上限
         if self.initiatives_today >= self.boundaries.max_initiatives_per_day {
+            self.last_hold = Some(InitiativeGate::DailyLimit); // presence 留痕
             return None;
         }
         // 门禁 2.5 (LLM 成本预算): 距上次主动不足 min_llm_interval → 保持安静.
@@ -464,23 +478,27 @@ impl<R: RelationshipState> EmergenceLoop<R> {
             let min = chrono::Duration::from_std(self.config.min_llm_interval)
                 .unwrap_or(chrono::Duration::zero());
             if since < min {
+                self.last_hold = Some(InitiativeGate::LlmBudget); // presence 留痕
                 return None;
             }
         }
         // 门禁 3: 关系深度不够
         let depth = self.relationship.depth();
         if depth < self.boundaries.min_depth {
+            self.last_hold = Some(InitiativeGate::DepthLow); // presence 留痕
             return None;
         }
 
         let rhythm = self.rhythm.estimate(minutes_now);
         // 门禁 4: 没有观察天数时, 不猜测作息 (诚实: 不打扰)
         if rhythm.days == 0 {
+            self.last_hold = Some(InitiativeGate::RhythmUnknown); // presence 留痕
             return None;
         }
         // 门禁 5 (节奏否决): 学到的作息说「此刻几乎不可能活跃」→ 沉默压力再大也不打扰
         // (这是「推算作息」能力的第一个实例: 深夜/午觉被学成安静, 不是写死的)
         if rhythm.active_probability < self.config.rhythm_veto_probability {
+            self.last_hold = Some(InitiativeGate::RhythmVeto); // presence 留痕
             return None;
         }
 
@@ -519,6 +537,7 @@ impl<R: RelationshipState> EmergenceLoop<R> {
                     .map(|h| h >= self.config.probe_hours)
                     .unwrap_or(true);
             if !probe {
+                self.last_hold = Some(InitiativeGate::DriveLow); // presence 留痕
                 return None;
             }
             InitiativeReason::LongSilence {
@@ -528,6 +547,7 @@ impl<R: RelationshipState> EmergenceLoop<R> {
 
         self.initiatives_today += 1;
         self.last_initiative = Some(now);
+        self.last_hold = None; // presence 留痕: 决定开口, 清除拦下原因
         let action = select_action(context_hint.as_deref());
         Some(Initiative {
             reason,

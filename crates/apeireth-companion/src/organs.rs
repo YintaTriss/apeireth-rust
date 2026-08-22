@@ -24,6 +24,7 @@ use apeireth_evolution::state::{EvolutionState, EvolutionStateMachine, Transitio
 use chrono::{DateTime, Utc};
 
 use crate::emergence::{Boundaries, EmergenceLoop, Feedback, Initiative, SelfScore};
+use crate::presence::{GateDecision, InitiativeGate};
 use crate::security::{SecurityGate, SovereigntyGate};
 use crate::tone::DeliberationEcho;
 use crate::Bond;
@@ -42,6 +43,9 @@ pub struct AwakeCompanion {
     /// 最近一次智囊团审议的回声 (加权分 + 置信度) — 供 tone() 合成措辞强度。
     /// None = 尚未发生过审议。
     last_deliberation: Option<DeliberationEcho>,
+    /// 最近一次 tick 的开口决策留痕 (presence 内心状态频道观测口; 每次 tick 覆写,
+    /// 开口 = Spoke(动作标签), 拦下 = Held(真实门控原因)). 纯记录, 不参与决策 — 2026-08-21 增量添加.
+    last_decision: Option<GateDecision>,
 }
 
 impl AwakeCompanion {
@@ -61,6 +65,7 @@ impl AwakeCompanion {
             sovereignty: SovereigntyGate::default(),
             consecutive_ignores: 0,
             last_deliberation: None,
+            last_decision: None,
         }
     }
 
@@ -80,18 +85,31 @@ impl AwakeCompanion {
 
     /// 带全部器官的一次心跳:
     /// 不打扰(Boundaries.user_quiet) → 机制决策 → 情绪调制(consciousness) → 智囊团审议(council) → 策略存活(evolution).
+    /// presence 留痕 (2026-08-21): 每个出口分支记录 GateDecision (开口/拦下+真实原因), 0 行为变化.
     pub fn tick(&mut self, now: DateTime<Utc>, context_hint: Option<String>) -> Option<Initiative> {
         // 主权总闸 (最高优先): 熔断 = 一切停止
         if self.sovereignty.is_frozen() {
+            self.last_decision = Some(GateDecision::Held(InitiativeGate::SovereigntyFrozen));
             return None;
         }
         // 「不打扰」由 Boundaries.user_quiet 在机制层守门
-        let init = self.loop_.tick(now, context_hint)?;
+        let init = match self.loop_.tick(now, context_hint) {
+            Some(i) => i,
+            None => {
+                // 机制层拦下: 细分原因由 EmergenceLoop 逐分支留痕 (8 重门禁全覆盖,
+                // 见 emergence.rs tick). 各分支必留 Some; None 兜底 DriveLow 是
+                // 「机制默认保持安静」的诚实回落, 不臆造细分.
+                let gate = self.loop_.last_hold().unwrap_or(InitiativeGate::DriveLow);
+                self.last_decision = Some(GateDecision::Held(gate));
+                return None;
+            }
+        };
 
         // 情绪调制: PAD 愉悦度低 → 更克制
         let pad = self.emotion.current_pad();
         let mood = f64::from((pad.p + 1.0) / 2.0);
         if mood < self.loop_.config.mood_floor {
+            self.last_decision = Some(GateDecision::Held(InitiativeGate::EmotionLow));
             return None;
         }
 
@@ -112,11 +130,13 @@ impl AwakeCompanion {
             confidence: verdict.report.confidence,
         });
         if verdict.is_rejected() {
+            self.last_decision = Some(GateDecision::Held(InitiativeGate::CouncilVeto));
             return None;
         }
 
         // 演化: 主动策略必须处于活跃态
         if !self.evolution.current.is_active() {
+            self.last_decision = Some(GateDecision::Held(InitiativeGate::PolicyInactive));
             return None;
         }
         // 洋葱门 (V1 哲学 × V2 权限 × V3 HA): 主动也要过基地的宪法
@@ -132,19 +152,31 @@ impl AwakeCompanion {
                 // 哲学守门拦下 = 试图碰 12 键 = 熔断证据 (Self-Disable 三级响应)
                 self.sovereignty
                     .report_violation(&format!("哲学守门拦截({key:?})"), "主动动作");
+                self.last_decision = Some(GateDecision::Held(InitiativeGate::GateBlock));
                 return None;
             }
             other => {
                 eprintln!("[gate] 洋葱门拦下主动 (权限/HA): {:?}", other);
+                self.last_decision = Some(GateDecision::Held(InitiativeGate::GateBlock));
                 return None;
             }
         }
+        // 开口: 留痕机制选出的动作标签 (Action::label(), 非话术文案)
+        self.last_decision = Some(GateDecision::Spoke {
+            action: init.action.label().to_string(),
+        });
         Some(init)
     }
 
     /// 最近一次审议的回声 (尚未发生过审议 = None)。
     pub fn last_deliberation(&self) -> Option<&DeliberationEcho> {
         self.last_deliberation.as_ref()
+    }
+
+    /// 最近一次 tick 的开口决策留痕 (尚未 tick 过 = None)。
+    /// presence 内心状态频道观测口 (2026-08-21): 只读, 0 副作用。
+    pub fn last_decision(&self) -> Option<&GateDecision> {
+        self.last_decision.as_ref()
     }
 
     /// 三层器官语调 (确定性合成, 渲染层注入用):

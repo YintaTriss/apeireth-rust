@@ -461,6 +461,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
+ "tower-http 0.5.2",
  "tract-onnx 0.21.10",
  "uuid",
  "windows-sys 0.59.0",

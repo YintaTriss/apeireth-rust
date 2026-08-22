@@ -299,7 +299,11 @@
                 <div class="graph-item">
                   <span class="fact-tag">Fact</span>
                   <p class="fact-text">{fact.content}</p>
-                  <small class="time-text">{formatTime(fact.timestamp)}</small>
+                  {#if fact.timestamp > 0}
+                    <small class="time-text">{formatTime(fact.timestamp)}</small>
+                  {:else if fact.importance != null}
+                    <small class="time-text">重要度 {fact.importance}</small>
+                  {/if}
                 </div>
               {/each}
             </div>
@@ -316,7 +320,9 @@
                 <div class="graph-item">
                   <span class="link-tag">Link</span>
                   <p class="fact-text">{link.content}</p>
-                  <small class="time-text">{formatTime(link.timestamp)}</small>
+                  {#if link.timestamp > 0}
+                    <small class="time-text">{formatTime(link.timestamp)}</small>
+                  {/if}
                 </div>
               {/each}
             </div>

@@ -1,0 +1,486 @@
+{
+  "$schema": "https://apeireth.local/schemas/design-tokens/v1.json",
+  "meta": {
+    "name": "apeireth-design-tokens",
+    "version": "1.0.0",
+    "spec": "docs/design/01-DESIGN-SYSTEM.md",
+    "statusLegend": {
+      "accepted": "已验收：数值与 frontend/design-preview/index.html v0.2 原型逐行一致",
+      "proposal": "提案待主人确认：主人已确认方向，具体数值为本文首次提出",
+      "calibration": "待实拍校准：从概念图/参考图采样或推算的概念性数值，实拍或实现后回写"
+    },
+    "consumers": ["frontend/companion-desktop (Svelte 5 + Tauri 2)", "frontend/design-preview (原型)"],
+    "updated": "2026-08-21"
+  },
+
+  "color": {
+    "presence": {
+      "_status": "accepted",
+      "_source": "index.html:329-331 (shader diskRadiance) / :11-12 (CSS)",
+      "whiteHot": { "hex": "#fff2d1", "rgb": [1.000, 0.950, 0.820], "role": "吸积盘白热内缘" },
+      "gold":     { "hex": "#ffd27a", "rgb": [1.000, 0.824, 0.478], "role": "主盘饱和金 / 存在色主体" },
+      "amber":    { "hex": "#e8a33d", "rgb": [0.910, 0.639, 0.239], "role": "外缘琥珀" },
+      "dopplerBoost": { "hex": "#fff4d4", "rgb": [1.000, 0.955, 0.830], "role": "多普勒增亮侧（趋近侧更白更亮）", "_source": "index.html:335" },
+      "uiGold":   { "hex": "#e8d9b0", "role": "UI 层金色（cam-dot 激活态等，比 shader 金更哑）", "_source": "index.html:10 (--gold)" },
+      "platinum": { "hex": "#fff3d6", "role": "铂白高光（光子环/呼吸光/pulse 元素）", "_source": "index.html:11 (--platinum), :30, :634, :647" },
+      "rule": "金色 = 他的存在/活动专属色。用户界面中任何金色元素必须对应真实状态，禁止装饰性使用。"
+    },
+    "void": {
+      "_status": "accepted",
+      "base":    { "hex": "#07070c", "rgb": [0.027, 0.027, 0.047], "role": "深空底色（夜航/A版基准）", "_source": "index.html:9 (--void), :372 (shader), :566 (fallback)" },
+      "horizon": { "hex": "#000000", "role": "事件视界纯黑（tonemap 后强制压黑）", "_source": "index.html:417, :640-643" },
+      "conceptA": {
+        "_status": "calibration",
+        "_source": "concepts/bridge-concept-a.png 采样（2048x1152）",
+        "spaceBgMean": "#0c0a07",
+        "spaceBgDark": "#050402",
+        "consoleFloorMean": "#0c0905",
+        "note": "A 版实拍底色带暖棕倾向；原型令牌 #07070c 偏蓝黑。两版并存：shader 用 #07070c，实拍贴图按概念图暖化。"
+      }
+    },
+    "deepspaceBlue": {
+      "_status": "calibration",
+      "_source": "concepts/bridge-concept-b-endfield-fusion.png 采样（2048x1152，区域均值/十分位）",
+      "_note": "B 版/行照期底色区间，供 timeline.daylit 档与 B 版舰桥材质使用；实现时以实拍/实渲回写",
+      "base":      { "hex": "#0d1b2e", "role": "深空蓝主底（舷窗外空间均值）" },
+      "dark":      { "hex": "#05162c", "role": "深空蓝最暗十分位" },
+      "light":     { "hex": "#293b51", "role": "深空蓝最亮十分位（星野/尘埃增亮区）" },
+      "planetRim": { "hex": "#2b5380", "role": "行星蓝边（晨昏线附近）" },
+      "planetRimHi": { "hex": "#6faadf", "role": "行星蓝边高光" },
+      "floor":     { "hex": "#1d2026", "role": "舰桥地板深蓝灰" },
+      "consoleWhite": { "hex": "#919eb0", "role": "白色家具/台面高光（哑白偏冷）" }
+    },
+    "text": {
+      "_status": "accepted",
+      "bone": { "hex": "#e8e0cc", "role": "文字骨白（--bone，正文/引用/UI 主文字）", "_source": "index.html:12, :21" }
+    },
+    "ui": {
+      "_status": "proposal",
+      "_note": "面板/卡片层级为终末地配方（reference/endfield-ui, endfield-chat 验证）的本地化提案，数值待主人确认",
+      "panel":      { "hex": "#0b0d12", "alpha": 0.82, "role": "页面层面板底（近黑，浮于虚化场景上）" },
+      "panelSolid": { "hex": "#0b0d12", "alpha": 1.0,  "role": "不透明近黑（设置页等需要专注的场景）" },
+      "card":       { "hex": "#ece7da", "role": "哑白卡片（内容卡/消息卡，终末地配方）" },
+      "cardDark":   { "hex": "#15181f", "role": "深灰卡片（列表项/次要容器）" },
+      "line":       { "hex": "#e8e0cc", "alpha": 0.14, "role": "1px 细分隔线/描边" },
+      "accentTab":  { "hex": "#ffd27a", "role": "激活 tab/进度/高亮——复用存在金，同金色纪律" },
+      "stamp":      { "hex": "#ece7da", "role": "图章/编号文字（括号角标内）" }
+    },
+    "semantic": {
+      "_status": "proposal",
+      "_note": "克制使用；仅用于警示/否定/成功等语义，不用于装饰",
+      "success": { "hex": "#7fb894", "role": "授权成功/健康" },
+      "warning": { "hex": "#d9a24a", "role": "降级/预算预警" },
+      "danger":  { "hex": "#c0584e", "role": "否决/熔断/错误" },
+      "info":    { "hex": "#7d9cc0", "role": "中性信息（深空蓝系，不抢金色）" }
+    },
+    "inversion": {
+      "_status": "proposal",
+      "_source": "reference/endfield-ui/04-授权过场.png（PROTOCOL PASS 全屏反白手法）",
+      "bg":   { "hex": "#e8e6e0", "role": "授权/承诺时刻全屏反白底" },
+      "ink":  { "hex": "#141412", "role": "反白态正文/图章黑" },
+      "rule": "仅授权/承诺/原则被批准等仪式时刻使用；日常界面禁止大面积白底"
+    },
+    "starfield": {
+      "_status": "accepted",
+      "_source": "index.html:354-356 (shader tint), :551 (fallback 等价色)",
+      "tintWarm":   { "hex": "#f2d99e", "rgb": [0.95, 0.85, 0.62], "share": "默认（hc>=0.55）" },
+      "tintBone":   { "hex": "#faedcc", "rgb": [0.98, 0.93, 0.80], "share": "12%<=hc<55%" },
+      "tintBlue":   { "hex": "#b8ccff", "rgb": [0.72, 0.80, 1.00], "share": "hc<0.12（12% 蓝星）" },
+      "milkyWay":   { "hex": "#e6cc94", "rgb": [0.90, 0.80, 0.58], "intensity": 0.16, "_source": "index.html:385" }
+    }
+  },
+
+  "timeline": {
+    "_status": "proposal（档位定义与双驱动机制为主人确认的决策；具体参数数值为本文提案，行照档蓝系锚定 calibration 色板）",
+    "_doc": "docs/design/01-DESIGN-SYSTEM.md §3 舰内时间线照明系统",
+    "drivers": {
+      "localClock":  { "weight": 0.5, "source": "用户本机时间（前端可读，无后端依赖）" },
+      "backendState": {
+        "weight": 0.5,
+        "signals": [
+          { "signal": "initiative.gate == quiet_hours", "effect": "偏向夜航", "source": "presence.rs:58-59 (QuietHours)" },
+          { "signal": "dream 事件（做梦整合完成）", "effect": "夜间档确认/加深", "source": "presence.rs:213-222 (DreamPayload)" },
+          { "signal": "emotion.pad（ daemon_loop 心跳推送）", "effect": "档内微调金色占比与光强", "source": "presence.rs:165-182 (EmotionPayload)" }
+        ],
+        "_honesty": "presence 四类事件已接入 SSE 广播管道（companion_serve.rs:1786-1845 daemon_loop 每 60s tick + :1891-1899 主人消息经 interactions 通道触发 + :1320-1328 工具桥 memory_recall；v5 文档段 :16-37）。当前为每 60s tick + 事件触发的低频率，前端对档内微调做平滑插值；双驱动可用，emotion 事件即『他的状态』输入源。"
+      }
+    },
+    "modes": {
+      "daylit": {
+        "label": "行照",
+        "story": "靠近行星/恒星的航行期 = B 版舰桥：深空蓝 + 白家具",
+        "paletteRef": "color.deepspaceBlue",
+        "ambientColorTempK": 6200,
+        "ambientIntensity": 0.62,
+        "panelOpacity": 0.58,
+        "starBrightness": 1.25,
+        "goldRatio": 0.14,
+        "suggestedLocalHours": [8, 14]
+      },
+      "dusk": {
+        "label": "暮色",
+        "story": "过渡档：蓝退金进，舰桥渐暗",
+        "paletteRef": "color.deepspaceBlue.dark × color.void.base 混合",
+        "ambientColorTempK": 4300,
+        "ambientIntensity": 0.38,
+        "panelOpacity": 0.70,
+        "starBrightness": 1.0,
+        "goldRatio": 0.24,
+        "suggestedLocalHours": [14, 18]
+      },
+      "night": {
+        "label": "夜航",
+        "story": "远离行星的深空巡航 = A 版舰桥：纯黑 + 金；他做梦的深夜舰桥恰好夜航",
+        "paletteRef": "color.void.base",
+        "ambientColorTempK": 2900,
+        "ambientIntensity": 0.16,
+        "panelOpacity": 0.85,
+        "starBrightness": 0.85,
+        "goldRatio": 0.36,
+        "suggestedLocalHours": [18, 4.5],
+        "_anchor": "配色与光比锚定已验收原型（--void/--gold 系），为四档中唯一 accepted 锚点"
+      },
+      "transit": {
+        "label": "凌日",
+        "story": "凌日/蚀 = 仪式时刻：星空熄灭，唯一金色光源，反白图章可用",
+        "paletteRef": "color.void.horizon + color.presence.gold",
+        "ambientColorTempK": 2400,
+        "ambientIntensity": 0.06,
+        "panelOpacity": 0.92,
+        "starBrightness": 0.30,
+        "goldRatio": 0.60,
+        "suggestedLocalHours": null,
+        "demoWindow": "12:00±20min（原型演示窗，ec = 1 - sstep(0.20, 0.3334, |h-12|)，约 ±16min 显示仪式标签）",
+        "trigger": "不由时钟触发；由仪式事件触发（授权批准/原则通过/周年），持续时长随事件",
+        "_note": "触发源后端当前无对应事件，0 装标注：现阶段仅由授权批准动作（/v1/apeireth/grant 成功）在前端本地触发"
+      }
+    },
+    "curve": {
+      "_status": "accepted",
+      "_source": "index.html:329-395（时间线滑杆，T 键显隐；按主人验收实现）",
+      "_note": "时段与升降沿已验收；modes.* 的五照明参数仍 proposal 待滑杆演示验收",
+      "dawnEdge":  { "startH": 4.5, "endH": 8.0, "durationH": 3.5, "easing": "smoothstep", "label": "黎明上升沿" },
+      "duskEdge":  { "startH": 14.0, "endH": 18.0, "durationH": 4.0, "easing": "smoothstep", "label": "黄昏下降沿（与黎明对称）" },
+      "eclipseWindow": { "centerH": 12.0, "halfWidthMin": 20 },
+      "formulas": {
+        "amb": "sstep(4.5, 8.0, h) * (1 - sstep(14, 18, h))",
+        "eclipse": "1 - sstep(0.20, 0.3334, |h - 12|)",
+        "brightMod": "1 + 0.22*amb + 0.15*eclipse",
+        "goldMod": "1 - 0.55*amb"
+      },
+      "demoPlay": "24h ≈ 40s 循环（50ms 步进 0.03h）"
+    },
+    "futureAstronomy": {
+      "_status": "calibration（远景提案，现阶段不实现，仅记录方向；附录 B-11）",
+      "idea": "联网获取用户所在地真实日出日落/月相/天文事件（如日月食）时刻驱动四档切换，取代本地固定时钟表",
+      "replaces": "timeline.drivers.localClock 的固定时段输入源",
+      "unchanged": "档位曲线与过渡纪律（curve、transition）不变，只换驱动源",
+      "offlineFallback": "本文件 curve + modes.*.suggestedLocalHours 即兜底"
+    },
+    "transition": {
+      "minDurationSec": 60,
+      "defaultDurationSec": 90,
+      "easing": "easeInOutCubic",
+      "rule": "档位间一切照明参数（色温/光强/透明度/星空亮度/金色占比）同步插值，缓动时长 ≥60s；禁止跳变"
+    }
+  },
+
+  "camera": {
+    "_status": "accepted",
+    "_source": "index.html:191-261",
+    "presets": [
+      { "id": 0, "label": "远眺", "incl": 0.300, "zoom": 1.00, "azim": 0.00, "ox": 0.00, "oy": 0.00, "_source": "index.html:193" },
+      { "id": 1, "label": "临渊", "incl": 0.115, "zoom": 1.90, "azim": -0.10, "ox": 0.00, "oy": -0.05, "_source": "index.html:194", "note": "点击黑洞切入此机位" },
+      { "id": 2, "label": "俯瞰", "incl": 0.800, "zoom": 0.92, "azim": 0.40, "ox": 0.00, "oy": 0.03, "_source": "index.html:195" }
+    ],
+    "tween": { "durationSec": 2.6, "easing": "easeInOutCubic", "_source": "index.html:204, :226-228, :233-240" },
+    "drift": {
+      "_source": "index.html:244-246",
+      "azimuth":     { "amplitude": 0.050, "periodSec": 47, "phase": 0.0 },
+      "inclination": { "amplitude": 0.020, "periodSec": 37, "phase": 1.3 },
+      "zoom":        { "amplitude": 0.045, "periodSec": 53, "phase": 2.1, "mode": "multiplicative" },
+      "rule": "三组正弦叠加，周期互质（47/37/53），漂移永不可被观众预测节奏；prefers-reduced-motion 时全部归零"
+    },
+    "parallax": {
+      "_source": "index.html:230-261",
+      "mouseAzimuthRange": 0.18,
+      "mouseInclinationRange": 0.07,
+      "smoothingRate": 2.5,
+      "blackHoleDisplacementPx": 0,
+      "rule": "轨道式视差：鼠标只改 azim/incl 两个轨道角；黑洞构图中心永远钉死（ox/oy 仅来自机位预设），只有视角与星野动"
+    },
+    "layout": {
+      "_source": "index.html:211-212",
+      "breakpointPx": 820,
+      "desktop": { "cx": 0.66, "cy": 0.45, "holeRadiusRatio": 0.160 },
+      "mobile":  { "cx": 0.50, "cy": 0.28, "holeRadiusRatio": 0.190 },
+      "note": "cx/cy 为屏宽/高比例；holeRadiusRatio = min(w,h) 比例。黑洞位于右半屏偏上；与概念图『右上象限』的差异属构图余量，最终实拍校准时复核"
+    },
+    "inclClamp": [0.06, 1.2],
+    "hotkeys": ["1", "2", "3"],
+    "starParallax": {
+      "_source": "index.html:377-389, :570",
+      "viewOffset": { "x": "uAzim", "y": "(uIncl - 0.30) * 0.8" },
+      "layers": [
+        { "k": 0.50, "scale": 230.0, "threshold": 0.9960, "sizeMul": 0.80, "share": 0.50 },
+        { "k": 0.90, "scale": 150.0, "threshold": 0.9955, "sizeMul": 1.15, "share": 0.33 },
+        { "k": 1.40, "scale": 95.0,  "threshold": 0.9965, "sizeMul": 1.70, "share": 0.17 }
+      ],
+      "milkyWayParallaxK": 0.45,
+      "rule": "视角右转（azim+）→ 星野向左流；近层位移 > 远层；黑洞本体不动"
+    }
+  },
+
+  "presence": {
+    "_doc": "docs/design/01-DESIGN-SYSTEM.md §5 与 docs/02-guides/frontend-data-contract.md §8.1",
+    "channel": {
+      "endpoint": "GET /v1/apeireth/events",
+      "format": "单行 JSON（serde 内部标签 type 平铺），与 legacy 纯文本『[他说] …』行共用一条 SSE 流；前端按 `{` 前缀区分",
+      "wireStatus": "wired",
+      "wireStatusNote": "PresenceEvent 四种事件在 crates/apeireth-companion/src/presence.rs:152-236 定义并被单测锁定（:337-502），已接入 SSE 广播管道：companion_serve.rs:1786-1845（daemon_loop 每 60s tick：emotion 心跳 :1790-1793、initiative spoke/held 去抖 :1794-1812、dream 真库 mem-dream-* 增量 :1813-1843，旧做梦不重播）、:1891-1899（主人消息到达后经 interactions 通道推 PAD 快照）、:1320-1328（recall_memory 工具桥真实命中推 memory_recall）；v5 文档段 companion_serve.rs:16-37 自述两类 data 行",
+      "cadence": {
+        "emotion": "每 60s tick 一条心跳 + 主人消息到达后一条（低频率；on_user_message 只喂节律不触情绪事件，推的是当前真实 PAD，多为基线）",
+        "initiative": "spoke 每次都推；held 仅门控原因变化时推（去抖，否则每 60s 刷屏）",
+        "dream": "serve 启动后新发生的做梦增量（真库轮询）",
+        "memory_recall": "recall_memory 工具桥真实命中时推",
+        "frontendRule": "tick 间隔内前端对 PAD 映射参数做平滑插值（沿用 states.smoothing 指数趋近），不跳变；插值不是模拟数据，无需 SIM 标注"
+      },
+      "knownLimits": [
+        "emotion 事件只能由 daemon_loop 异步推（每 tick 心跳 + 主人消息到达后经 interactions 通道），chat handler 同步路径拿不到 PAD——daemon 内部 RefCell 跨 await 非 Send（presence.rs:21-23；companion_serve.rs:29-32）",
+        "build_injection 记忆注入路径的召回数锁在 assemble.rs::inject_memory 局部变量不外露，memory_recall 只接 recall_memory 工具桥路径（presence.rs:24-25；companion_serve.rs:33-34）",
+        "presence 事件只进 SSE 广播，不进 Lark/Telegram 离线 sink（presence.rs:26；companion_serve.rs:35）"
+      ]
+    },
+    "events": {
+      "emotion":       { "fields": ["at", "pad{p,a,d}∈[-1,1]", "dominant", "intensity", "response_style", "tone?"], "source": "presence.rs:166-182, EmotionEngine 真引擎" },
+      "initiative":    { "fields": ["at", "outcome(spoke|held)", "gate?(13种)", "gate_label?", "action?"], "source": "presence.rs:185-201；13 门控 serde 标签被单测锁定（:409-431），改标签 = 改前端契约" },
+      "dream":         { "fields": ["at", "merged_count", "summary_prefix(前40字)"], "source": "presence.rs:214-222" },
+      "memory_recall": { "fields": ["at", "found", "keywords(≤8词,每词≤16字)", "redacted(恒true)"], "source": "presence.rs:225-236；命中原文设计上不进事件" }
+    },
+    "states": {
+      "_status": "accepted",
+      "_source": "index.html:181-185",
+      "quiet":    { "label": "安静", "speed": 0.015, "bright": 0.32, "turb": 0.12, "pulse": 0.0 },
+      "thinking": { "label": "思考", "speed": 0.380, "bright": 0.90, "turb": 1.00, "pulse": 0.0 },
+      "speaking": { "label": "说话", "speed": 0.160, "bright": 1.05, "turb": 0.35, "pulse": 1.0 },
+      "smoothing": { "rate": 2.4, "mode": "exponential", "_source": "index.html:497-501" }
+    },
+    "padMapping": {
+      "_status": "proposal",
+      "_note": "PAD→光环映射规则为本文提案，锚点为已验收三态（quiet/thinking/speaking 即 a/p/intensity 的低高档）；presence 频道已接线（见 channel.wireStatusNote），上线后按真实 PAD 分布回归校准",
+      "rotationSpeed": {
+        "formula": "speed = 0.015 + 0.365 * clamp01((a + 1) / 2)",
+        "drivenBy": "pad.a（唤醒度）",
+        "anchors": { "a=-1": 0.015, "a=+1": 0.380 },
+        "note": "a=-1 → quiet.speed；a=+1 → thinking.speed；speaking 的 0.160 由开口动作直接置态，不经此式"
+      },
+      "brightness": {
+        "formula": "bright = 0.32 + 0.73 * clamp01((p + 1) / 2)",
+        "drivenBy": "pad.p（愉悦度）",
+        "anchors": { "p=-1": 0.32, "p=+1": 1.05 }
+      },
+      "turbulence": {
+        "formula": "turb = clamp01(intensity)",
+        "drivenBy": "emotion.intensity（PAD 距 baseline 欧氏距离）",
+        "anchors": { "intensity=0": 0.12, "intensity>=1": 1.00 },
+        "note": "intensity<0.12 时取 0.12 下限，保持盘面呼吸感"
+      },
+      "warmth": {
+        "formula": "warmth = 0.5 + 0.5 * d，驱动 diskRadiance 梯度在 amber↔whiteHot 间偏移",
+        "drivenBy": "pad.d（支配度）",
+        "_requiresShaderChange": true,
+        "note": "原型 shader 无此 uniform；新增需改 index.html:329-333 梯度混合——列为 v1.1 提案，v1.0 不实现"
+      },
+      "pulse": {
+        "rule": "pulse=1.0 当且仅当他在输出（流式响应进行中或 initiative.outcome==spoke 后 8s 内）；其余时刻 pulse=0",
+        "source": "index.html:184 (speaking.pulse), presence initiative 事件"
+      }
+    },
+    "haloRing": {
+      "_status": "proposal",
+      "_note": "中央悬浮全息环 = 舷窗外吸积盘的分身（概念图 B: bridge-concept-b-endfield-fusion.png 中央环）；复用同一组 states/padMapping 参数渲染，规模缩小，禁止独立杜撰第二套状态"
+    }
+  },
+
+  "rendering": {
+    "_status": "accepted",
+    "_source": "index.html:318-428 (shader), :534-666 (2D fallback)",
+    "disk": {
+      "rIn": 1.45, "rOut": 5.0, "cutoff": 5.6,
+      "band": "smoothstep(rIn, rIn+0.40, r) * (1 - smoothstep(rIn+1.3, rOut, r))",
+      "rotation": "pr = uRot * (2.6 / (r*r*0.5 + 0.5))（内快外慢差速）",
+      "gradient": {
+        "inner": "whiteHot → gold：smoothstep(0.02, 0.22, hr)",
+        "outer": "gold → amber：smoothstep(0.30, 1.0, hr)",
+        "hr": "(r - rIn) / (rOut - rIn)"
+      },
+      "doppler": "dop = 1 - 0.95*cos(phi)；增亮 mix 上限 0.45",
+      "rim": "exp(-((r-1.52)*5)^2)，色 (1.0,0.96,0.87)，增益 uBright*1.4",
+      "radianceGain": 1.6,
+      "fbm": { "octaves": 5, "lacunarity": 2.03, "offset": [17.3, 9.1], "gain": 0.5 }
+    },
+    "halo": {
+      "inner": { "rgb": [1.00, 0.78, 0.38], "intensity": 0.060, "falloff": 0.85 },
+      "outer": { "rgb": [0.92, 0.62, 0.24], "intensity": 0.030, "falloff": 0.26 },
+      "brightTerm": "(0.3 + uBright)",
+      "_source": "index.html:394-395"
+    },
+    "photonRing": {
+      "primary":   { "radius": 1.045, "sharpness": 42.0, "rgb": [1.0, 0.96, 0.86], "intensity": "0.60 + 0.30*uBright + 0.50*uPulse*pulseWave" },
+      "secondary": { "radius": 1.14,  "sharpness": 13.0, "rgb": [1.0, 0.82, 0.50], "intensity": "0.16 * uBright" },
+      "pulseWave": "0.5 + 0.5*sin(t*1.9)（周期≈3.3s）",
+      "_source": "index.html:370, :420-423"
+    },
+    "speakingBreath": {
+      "rgb": [1.0, 0.95, 0.85],
+      "formula": "exp(-rp*2.4) * uPulse * (0.22 + 0.38*pulseWave) * 0.55",
+      "_source": "index.html:426"
+    },
+    "horizon": { "clip": "smoothstep(0.985, 1.045, rp)", "tonemap": "1 - exp(-col * 1.55)", "forceBlack": true, "_source": "index.html:369, :416-417" },
+    "starfield": {
+      "layers": "见 camera.starParallax.layers（同一组三层）",
+      "milkyWay": { "bandNormal": [-0.485, 0.874], "bandOffset": 0.60, "bandWidth": 2.2, "texScale": [2.2, 1.1], "bandTexFreq": 7.0, "nebulaScale": 3.5, "nebulaOffset": 4.7, "starBoost": "1 + 2.2*mw" },
+      "_source": "index.html:379-389"
+    },
+    "post": {
+      "vignette": { "gradient": "ellipse 125% 95% at 50% 45%", "innerStop": "52% transparent", "outerColor": "rgba(2,2,5,0.6)", "_source": "index.html:37-40" },
+      "grain": { "opacity": 0.07, "blend": "overlay", "tile": [320, 180], "amplitude": 42, "refreshMs": 130, "pauseWhenHidden": true, "_source": "index.html:41-44, :676-694" }
+    },
+    "fallback2d": {
+      "_source": "index.html:534-666",
+      "starDensity": "cssW*cssH/6500",
+      "starColors": ["#aebfff", "#f4ead2", "#e8d3a0"],
+      "ambientGlow": ["rgba(255,210,122, 0.06+0.08*bright)", "rgba(232,163,61, 0.03+0.04*bright)"],
+      "horizon": "#000000",
+      "photonRim": "rgba(255,243,214, 0.45+0.25*bright)"
+    }
+  },
+
+  "typography": {
+    "_status": "accepted（字族/字距/行高均出自原型与现行前端令牌）",
+    "voice": {
+      "role": "他的声音（引用/日记/正式发言）",
+      "stack": ["Songti SC", "Noto Serif CJK SC", "Noto Serif SC", "STSong", "SimSun", "serif"],
+      "_source": "index.html:20",
+      "quote": { "fontSize": "clamp(16px, 1.45vw, 22px)", "lineHeight": 2.1, "letterSpacingEm": 0.13, "maxWidthCh": 31, "_source": "index.html:57-59, :56" },
+      "quoteMobile": { "fontSize": "clamp(15px, 4.1vw, 19px)", "lineHeight": 1.95, "_source": "index.html:122" },
+      "caption": { "fontSizePx": 11, "letterSpacingEm": 0.5, "_source": "index.html:62-64（qmark）" },
+      "attribution": { "fontSizePx": 11, "letterSpacingEm": 0.35, "_source": "index.html:67-68（src）" }
+    },
+    "ui": {
+      "role": "UI 文字",
+      "stack": ["system-ui", "-apple-system", "PingFang SC", "Microsoft YaHei UI", "sans-serif"],
+      "_source": "frontend/companion-desktop/src/styles.css --sans（审计 §4.1）",
+      "label": { "fontSizePx": 12, "letterSpacingEm": 0.3, "_source": "index.html:74-79（mode-btn）" },
+      "brand": { "fontSizePx": 11, "letterSpacingEm": 0.55, "_source": "index.html:50" },
+      "footnote": { "fontSizePx": 10, "letterSpacingEm": 0.25, "_source": "index.html:111-113" }
+    },
+    "data": {
+      "role": "数据/编号/状态行",
+      "stack": ["ui-monospace", "SF Mono", "Cascadia Mono", "Consolas", "monospace"],
+      "fontSizePx": 11, "letterSpacingEm": 0.28,
+      "_source": "index.html:105-108（status）"
+    },
+    "cjkLatinRule": "中英混排时拉丁字母与数字沿用所在字族，不单独指定西文字体；字号字距以中文为准，西文不额外加 letter-spacing"
+  },
+
+  "motion": {
+    "_status": "accepted（除 timeline 过渡外均出自原型）",
+    "uiTransition": { "minDurationSec": 2.0, "rule": "机位/状态的一切界面过渡 ≥2s 缓动", "cameraTweenSec": 2.6, "easing": "easeInOutCubic", "_source": "index.html:204, :226-228" },
+    "stateSmoothing": { "rate": 2.4, "mode": "exponential（趋近而非到达，无硬切换）", "_source": "index.html:497" },
+    "mouseSmoothing": { "rate": 2.5, "_source": "index.html:247" },
+    "breathe": { "durationSec": 2.8, "easing": "ease-in-out", "opacity": [0.22, 0.65], "scale": [1.0, 1.09], "_source": "index.html:32-36（pulse 元素，2D 兜底说话态）" },
+    "pulseWave": { "angularFreq": 1.9, "periodSec": 3.3, "_source": "index.html:370" },
+    "drift": "见 camera.drift（47s/37s/53s 三组正弦）",
+    "timelineTransition": { "minDurationSec": 60, "defaultDurationSec": 90, "_status": "proposal" },
+    "grainRefreshMs": 130,
+    "reducedMotion": {
+      "rule": "prefers-reduced-motion: 漂移/视差/呼吸动画全停；机位锁定远眺；渲染降级为静态单帧（renderOnceGL）；pulse 元素 opacity 固定 0.45",
+      "_source": "index.html:127-130, :176, :200, :242, :521-526, :711-715"
+    }
+  },
+
+  "performance": {
+    "dprMax": 2, "_source": "index.html:210",
+    "pauseWhenHidden": true, "_source": "index.html:757-759",
+    "dtClampSec": 0.05, "_source": "index.html:493",
+    "tiers": {
+      "_status": "proposal（梯队方向主人已确认；阈值数值为本文提案。原型已实现 t0 与 t3 的雏形——WebGL2 实时 shader 与 Canvas2D 静态兜底，index.html:528-666）",
+      "t0": { "name": "顶配实时 shader", "requirement": "WebGL2 可用 且 持续 fps >= 55", "note": "index.html 原型即此档" },
+      "t1": { "name": "高配视差图层", "requirement": "WebGL2 不可用 或 持续 fps < 55 达 5s", "note": "预渲图层 + 三层视差，参数复用 camera.starParallax" },
+      "t2": { "name": "中配无缝循环视频", "requirement": "t1 仍 < 40fps 或 GPU 功率受限", "note": "每状态一条循环视频，状态切换 = 视频交叉淡入 ≥2s——仍状态驱动，不做死壁纸" },
+      "t3": { "name": "兜底静态星图+呼吸光", "requirement": "prefers-reduced-motion 或用户手动锁档", "note": "原型 2D fallback 即此档雏形；呼吸光保留（2.8s 呼吸为唯一允许的动）" }
+    },
+    "autoDegrade": { "windowSec": 5, "fpsLow": 40, "fpsHigh": 55, "rule": "连续 5s 低于 fpsLow 降一档；连续 30s 高于 fpsHigh 可升回；reduced-motion 用户永不自动升档", "_status": "proposal" }
+  },
+
+  "theme": {
+    "_status": "proposal（方向主人已确认：主题=文件夹，第一天支持换主题；商店暂缓）",
+    "format": {
+      "folder": "themes/<theme-id>/",
+      "files": ["design-tokens.json（本文件结构的全量或增量覆写）", "assets/（贴图/视频/字体，可选）", "theme.json（id/name/author/version/继承自哪个主题）"],
+      "loadOrder": ["内置默认主题（本文件）", "官方主题包", "用户主题文件夹（增量覆写，未知键忽略）"]
+    },
+    "official": ["night-void（夜航/A版，本文件默认值）", "daylit-blue（行照/B版，deepspaceBlue 为主）"],
+    "store": "暂缓，等生态；v1.0 只定义文件夹格式与加载顺序"
+  },
+
+  "montage": {
+    "_status": "proposal（主人原创决策；参数为本文提案）",
+    "_source": "concepts/montage-01-spark.png, montage-03-campfire.png, 蒙太奇分镜（concepts/）",
+    "grading": { "bg": "#000000", "singleLightSource": "color.presence.gold 系（唯一金色光源贯穿全片）" },
+    "beatSheet": ["火花", "营火", "蒸汽机", "发动机", "子弹底火", "火箭", "月球", "深空", "星环舰桥"],
+    "seamlessHandoff": "视频最后一帧 = 舰桥实时场景第一帧，交叉淡接（建议 1.5-2s）",
+    "playback": { "firstRun": "完整播放，可跳过", "subsequent": "3 秒短版（深空→星环舰桥段）", "skipKey": ["Esc", "点击"] }
+  },
+
+  "registers": {
+    "_status": "proposal（主人 2026-08-21 确认三调性方向；Archive/Deep-Ops 色值为参考图采样，calibration）",
+    "_doc": "docs/design/01-DESIGN-SYSTEM.md §5.6 三种调性登记",
+    "_source": "frontend/design-preview/reference/endfield-pages/（01 百科首页 / 02 图鉴展开 / 03 武器图鉴 / 04 工业计划树 / 05 总控中枢，2026-08-21 PIL 采样）",
+    "scene": {
+      "_status": "accepted",
+      "label": "深空场景调",
+      "appliesTo": ["舰桥", "对话", "观景", "快捷窗（全息层）"],
+      "paletteRef": ["color.void.base", "color.deepspaceBlue", "color.presence.gold", "color.text.bone"],
+      "note": "实时、在场、场景类；已验收基准（index.html 原型 + 概念图 A/B）"
+    },
+    "archive": {
+      "_status": "calibration",
+      "label": "纸面档案调",
+      "appliesTo": ["他的日记（默认）", "记忆星图列表态", "百科/图鉴"],
+      "paper":      { "hex": "#e2e1df", "range": ["#cfcdcc", "#e9e8e7"], "_source": "01/02/03 纸面底采样" },
+      "ink":        { "hex": "#26262a", "_source": "01/03 正文与标题墨黑" },
+      "ghostNumber": { "hex": "#c9c8c4", "role": "巨型幽灵编号（超大浅灰 01/02… 背景数字）", "_source": "01 采样" },
+      "markerOrange": { "hex": "#d9822b", "role": "菱形标记/未读提示，不承担强调职能", "_source": "01 采样（核心 #926a49 偏深，取更饱和提案值）" },
+      "iconGray":   { "hex": "#acabaa", "role": "像素/网格图标", "_source": "01 采样" },
+      "cardDark":   { "hex": "#454041", "deep": "#131212", "role": "条目深卡 + 稀有度色条", "_source": "03 采样" },
+      "accent":     { "hex": "#ffd27a", "role": "纸面调内强调色仍用存在金（金色=他 纪律跨调性有效）" },
+      "extras": ["图章", "翻页如翻阅一册日志"],
+      "note": "日记是被「写」下来的，纸面是诚实的载体；深色屏幕是显示，纸面是记录"
+    },
+    "deepOps": {
+      "_status": "calibration",
+      "label": "数据深舱调",
+      "appliesTo": ["系统状态", "审批审计", "任务面板", "工具注册表", "设置", "未来的主题管理界面"],
+      "base":  { "hex": "#1d262c", "deep": "#050a0f", "bottom": "#171a21", "_source": "05-总控中枢.png 采样" },
+      "modulePalette": {
+        "maxColors": 6,
+        "rule": "每类模块一个识别色，克制；识别色避开存在金 #ffd27a 系——识别色是模块的种类，金色是他，语义不稀释",
+        "colors": [
+          { "hex": "#2392fb", "role": "蓝（核心/中枢类）", "_source": "05 采样亮部" },
+          { "hex": "#6fae5f", "role": "绿（培养/生产类）", "_source": "05 采样（亮部 #98eaa3）" },
+          { "hex": "#e8c33a", "role": "工业黄（制造类；04 节点采样 #cead2f 偏暗，取更亮提案值）", "_source": "04/05 采样" }
+        ],
+        "todo": "余 3 色待实际模块类型确定后补足"
+      },
+      "connectionGraph": { "grammar": "树状节点 + 直角连线 + 对勾图章", "_source": "04-工业计划树.png", "_honesty": "04 在原作为浅灰底金节点——采纳其连线语法，底色系按本节决策取 05 深色系" }
+    },
+    "rules": [
+      "调性由页面职能决定，不混用；同一页面不跨调性",
+      "调性切换跟随 UI 分层（Archive/Deep-Ops 只发生在页面层）；场景调永远在场——页面层关闭即回到场景",
+      "纸面调内强调色仍用金；橙菱形仅用于标记/未读提示",
+      "深舱识别色总数 ≤6 且避开存在金"
+    ]
+  }
+}

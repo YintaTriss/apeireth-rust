@@ -5,6 +5,7 @@
   "windows": ["main", "quick"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "notification:default",
     "autostart:allow-enable",
     "autostart:allow-disable",

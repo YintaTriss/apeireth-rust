@@ -78,6 +78,7 @@ pub mod organs;
 pub mod partner;
 pub mod pentest;
 pub mod plugin;
+pub mod presence; // 内心状态频道 (PresenceEvent: emotion/initiative/dream/memory_recall, SSE 单行 JSON; 门控原因枚举被 emergence/organs 留痕引用)
 pub mod principles;
 pub mod proactive;
 pub mod proactive_memory; // W4: 记忆主动推销 (预期话题分类 + 预载检索道 + ProactiveBlock 注入)

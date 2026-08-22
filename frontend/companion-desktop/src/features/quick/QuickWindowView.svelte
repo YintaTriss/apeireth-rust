@@ -1,9 +1,10 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {ArrowUp, Loader2, Sparkles, X} from 'lucide-svelte';
+  import StatusDot from '../../components/StatusDot.svelte';
   import {renderMarkdown} from '../../lib/markdown';
-  import {createAgentRuntime, loadConfig} from '../../lib/runtime';
-  import type {ApeirethConfig} from '../../lib/types';
+  import {checkHealthDetailed, createAgentRuntime, loadConfig} from '../../lib/runtime';
+  import type {ApeirethConfig, HealthState} from '../../lib/types';
 
   let config = $state<ApeirethConfig>(loadConfig());
   let query = $state('');
@@ -11,9 +12,34 @@
   let busy = $state(false);
   let error = $state('');
   let inputEl = $state<HTMLInputElement | null>(null);
+  let health = $state<HealthState>('connecting');
 
   const runtime = createAgentRuntime(config);
   const responseHtml = $derived(responseText ? renderMarkdown(responseText) : '');
+  const healthText = $derived(
+    busy
+      ? '生成中'
+      : health === 'online' || health === 'ready'
+        ? '已连接'
+        : health === 'connecting'
+          ? '连接中…'
+          : health === 'degraded'
+            ? '部分可用'
+            : '未连接',
+  );
+  const dotOff = $derived(!busy && (health === 'offline' || health === 'error'));
+  const dotActive = $derived(
+    busy || health === 'connecting' || health === 'generating' || health === 'degraded',
+  );
+
+  async function probeHealth(): Promise<void> {
+    try {
+      const report = await checkHealthDetailed(config.baseUrl, config.apiKey);
+      health = report.overall;
+    } catch {
+      health = 'offline';
+    }
+  }
 
   async function handleClose(): Promise<void> {
     try {
@@ -53,20 +79,29 @@
   }
 
   onMount(() => {
+    // 透明窗钩子: html/body 背景透明, 配壳的 transparent 窗 (base.css html.companion-bg)
+    document.documentElement.classList.add('companion-bg');
     inputEl?.focus();
+    void probeHealth();
+    const probeTimer = window.setInterval(() => void probeHealth(), 15_000);
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         void handleClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      document.documentElement.classList.remove('companion-bg');
+      window.clearInterval(probeTimer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   });
 </script>
 
 <div class="quick-window-shell">
   <div class="quick-header" data-tauri-drag-region>
-    <div class="quick-brand">
+    <div class="quick-brand" title="后端：{healthText}">
+      <StatusDot size="tiny" off={dotOff} active={dotActive} />
       <Sparkles size={14} class="exec-icon-accent" />
       <span>Apeireth 快捷助手</span>
     </div>

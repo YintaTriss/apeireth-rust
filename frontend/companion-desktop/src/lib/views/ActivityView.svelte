@@ -27,6 +27,7 @@
   import StatusBadge from '../components/StatusBadge.svelte';
   import type {ActivityItem, ApeirethConfig, CapabilityManifest} from '../types';
   import {fetchAuditLogs, fetchTraceDetail, capabilitySupported} from '../runtime';
+  import {splitPresenceLine, type PresenceFrame} from '../presence';
 
   let {
     config,
@@ -164,6 +165,57 @@
     }
   }
 
+  /**
+   * presence 帧 → 活动条目（波次 2：契约 §8.1 分流纪律，修 G5 缺口）。
+   * - initiative/held（欲言又止 = 他的内心）不进对话流，但在此可见；
+   * - emotion 心跳（60s tick）与 legacy 测试行不进活动流——防刷屏，不是数据丢失；
+   * - memory_recall 只带 found/keywords（redacted 恒 true，原文设计上不在 SSE）。
+   */
+  function presenceEventToActivity(ev: PresenceFrame): ActivityItem | null {
+    const ts = 'at' in ev && typeof ev.at === 'string' ? Date.parse(ev.at) || Date.now() : Date.now();
+    const id = `presence-${ev.type}-${ts}-${Math.random().toString(36).slice(2, 6)}`;
+    if (ev.type === 'emotion') return null; // 心跳由场景层与状态行呈现
+    if (ev.type === 'initiative') {
+      if (ev.outcome === 'held') {
+        return {
+          id, timestamp: ts, category: 'agent', source: 'sse', severity: 'info',
+          title: '他欲言又止',
+          summary: `门控：${ev.gate_label || ev.gate || '未知'}`,
+          detail: JSON.stringify(ev, null, 2), raw: ev,
+        };
+      }
+      return {
+        id, timestamp: ts, category: 'conversation', source: 'sse', severity: 'info',
+        title: '他主动开口',
+        summary: ev.action ? `动作：${ev.action}` : '完整话术见对话视图',
+        detail: JSON.stringify(ev, null, 2), raw: ev,
+      };
+    }
+    if (ev.type === 'dream') {
+      return {
+        id, timestamp: ts, category: 'memory', source: 'sse', severity: 'success',
+        title: '做梦整合完成',
+        summary: `合并 ${ev.merged_count} 条记忆${ev.summary_prefix ? ` · ${ev.summary_prefix}` : ''}`,
+        detail: JSON.stringify(ev, null, 2), raw: ev,
+      };
+    }
+    if (ev.type === 'memory_recall') {
+      return {
+        id, timestamp: ts, category: 'memory', source: 'sse', severity: 'info',
+        title: `他想起了 ${ev.found} 段记忆`,
+        summary: ev.keywords?.length ? `关键词：${ev.keywords.join(' · ')}` : '（脱敏事件，不含原文）',
+        detail: JSON.stringify(ev, null, 2), raw: ev,
+      };
+    }
+    // presence_error：序列化兜底帧，显式呈报而非静默
+    return {
+      id, timestamp: ts, category: 'runtime', source: 'sse', severity: 'error',
+      title: 'presence 频道序列化异常',
+      summary: ev.error,
+      detail: JSON.stringify(ev, null, 2), raw: ev,
+    };
+  }
+
   function startSseListener() {
     if (sseEventSource) {
       sseEventSource.close();
@@ -177,8 +229,32 @@
       sseEventSource = new EventSource(`${base}/v1/apeireth/events`);
 
       sseEventSource.onmessage = (event) => {
+        const raw = typeof event.data === 'string' ? event.data : '';
+        // 契约 §8.1 分流：行首 { → presence JSON；否则 legacy 文本（[他说]/测试事件）
+        const split = splitPresenceLine(raw);
+        if (split.kind === 'legacy') {
+          const text = split.text ?? '';
+          if (!text.startsWith('[他说]')) return; // 测试事件行 = 链路验证，不进活动流
+          const said = text.slice('[他说]'.length).trim();
+          activities = mergeActivities(activities, [{
+            id: `legacy-say-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            timestamp: Date.now(),
+            category: 'conversation',
+            title: '他主动开口',
+            summary: said.length > 96 ? `${said.slice(0, 96)}…` : said,
+            source: 'sse',
+            severity: 'info',
+          }]);
+          return;
+        }
+        if (split.kind === 'presence' && split.event) {
+          const item = presenceEventToActivity(split.event);
+          if (item) activities = mergeActivities(activities, [item]);
+          return;
+        }
+        // 其余 JSON（未来 span 帧等）：保留既有通用解析路径
         try {
-          const parsed = JSON.parse(event.data) as {
+          const parsed = JSON.parse(raw) as {
             id?: string;
             type?: string;
             action?: string;

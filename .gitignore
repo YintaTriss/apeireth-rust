@@ -62,6 +62,8 @@ scripts/_*.sh
 research/source/
 claude-code-leaked/
 vended/
+# 商业游戏参考截图 (明日方舟: 终末地 reference — license 风险, 不 commit)
+frontend/design-preview/reference/
 
 # 临时 typo 文件
 =

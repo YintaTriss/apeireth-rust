@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Apeireth 桌面伙伴主窗口权限","local":true,"windows":["main","quick"],"permissions":["core:default","notification:default","autostart:allow-enable","autostart:allow-disable","autostart:allow-is-enabled"]}}
+{"default":{"identifier":"default","description":"Apeireth 桌面伙伴主窗口权限","local":true,"windows":["main","quick"],"permissions":["core:default","core:window:allow-start-dragging","notification:default","autostart:allow-enable","autostart:allow-disable","autostart:allow-is-enabled"]}}

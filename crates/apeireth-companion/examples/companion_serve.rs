@@ -13,6 +13,28 @@
 //!   ⑦ CompanionApp 装配器 (apeireth_companion::assemble): 注入管线 (L0 Identity +
 //!      L1 Essential Story 常驻核心块, mempalace §5.6 渐进加载) + 提炼调度 + 滚动摘要
 //!      + 反思→经验 + 晋级候选成文; 本文件只留 MiniMax LLM 实现 + HTTP 路由.
+//! v5 内心状态频道 (presence, 2026-08-21): SSE 事件流 (GET /v1/apeireth/events) 现在推两类 data 行 —
+//!   ⑧ legacy 文本行 ("[他说] ..." 涌现送达 / 测试事件, 原样保留)
+//!   ⑨ presence JSON 行 (apeireth_companion::presence::PresenceEvent, 单行 JSON,
+//!      {"type":..., "at": RFC3339, ...负载}):
+//!      - emotion        PAD 三维 + 主导情绪 + 漂移强度 + 响应风格 + 三层器官语调
+//!                       (daemon_loop 每 tick 一条 + 主人消息到达后一条;
+//!                       真实来源 daemon.awake.emotion 真引擎 + AwakeCompanion::tone())
+//!      - initiative     开口决策: spoke (机制动作标签) / held (13 种真实门控原因 —
+//!                       emergence 8 门禁 + organs 5 门控逐分支留痕; 拦下仅原因变化时推, 防抖)
+//!      - dream          做梦整合完成 (写回条数 + 摘要前缀; 来源 = 真库 mem-dream-*
+//!                       增量轮询, 只报 serve 启动后新发生的做梦, 旧做梦不重播)
+//!      - memory_recall  recall_memory 工具真实命中 (found 条目数 + query 关键词;
+//!                       命中原文 top 不进事件, redacted: true 为设计脱敏占位)
+//!   诚实标注 (0 装 PASS, 断点在哪):
+//!      - chat_completions handler 同步路径拿不到 PAD — daemon (含情绪引擎) 内部
+//!        RefCell 跨 await 非 Send, 锁在 daemon_loop task 与 HTTP 交替运行;
+//!        emotion 经 interactions 通道异步触发推送, handler 内 0 假装.
+//!      - build_injection 记忆注入路径的召回条目数锁在 assemble.rs::inject_memory
+//!        内部 (局部变量不外露) → 该路径 memory_recall 未接, 当前只接工具桥路径.
+//!      - presence 事件只进 SSE 广播, 不进 Lark/Telegram 离线 sink (sink 只收渲染文本).
+//!      - 验证通路: POST /v1/apeireth/test-event 推 legacy 文本行, 可验证 SSE 链路;
+//!        presence JSON 行走同一 broadcast 管道.
 //!
 //! VCP 对齐 + 改进 (docs/frontend-guide.md §五):
 //!   - 主链路 = OpenAI 兼容 chat completion; 预处理链 = 记忆注入 + 今日摘要注入 + 工具桥
@@ -55,6 +77,7 @@ use apeireth_companion::judicator::{ConstitutionLlm, LlmJudicator};
 use apeireth_companion::memory_extractor::{
     ExtractedMemory, MemoryExtractor, MemoryItem, ReconcileAction, ReconcileKind,
 };
+use apeireth_companion::presence::{GateDecision, InitiativeGate, PresenceEvent};
 use apeireth_companion::proactive::MemoryContextSource;
 use apeireth_companion::reflection::{ReflectionReflector, ReflectionScheduler};
 use apeireth_companion::tone::tone_hint;
@@ -76,6 +99,9 @@ use chrono::{Timelike, Utc};
 use futures::Stream;
 use serde_json::{json, Value};
 use std::convert::Infallible;
+// W6 前端联调: 本地浏览器/Tauri webview (localhost 任意端口) 跨域调 :8090
+// 与 apeireth-api/src/server.rs R27 同款 CorsLayer (Any origin, 本地单用户服务, 勿暴露局域网外)
+use tower_http::cors::{Any, CorsLayer};
 
 const DEFAULT_BASE_URL: &str = "https://api.minimaxi.com";
 /// 默认 model 名 — 实际值在 `main()` 里根据 env / TOML 选定 (0 装 PASS: env 缺省回落 `MiniMax-M3`).
@@ -1051,6 +1077,11 @@ async fn chat_completions(
 
     // 喂节律: 对话 = 互动 (节律直方图学习作息 + 重置做梦安静期) — 「他在」的感知
     let _ = st.interactions.send(Utc::now()).await;
+    // presence emotion 事件 (0 装 PASS 诚实降级): PAD 真引擎锁在 daemon 里
+    // (daemon.awake.emotion; daemon 内部 RefCell 跨 await 非 Send → 只在 daemon_loop
+    // task 内可达), 本 handler 同步路径拿不到 PAD → 此处不假装推情绪.
+    // 真实通路: 上面的 interactions.send 触发 daemon_loop 的 rx 分支, on_user_message
+    // 之后由 daemon_loop 推一条真实 PAD 快照 (见 daemon_loop 内 presence 段).
 
     let mut messages = req.messages.clone();
     // 当前问题 (最后一条 user 消息; 供推理召回/提炼)
@@ -1289,6 +1320,16 @@ async fn chat_completions(
                 archery_no_reply: false,
             };
             let r = st.bridge.execute_if_allowed(&call).await;
+            // presence memory_recall 事件 (内心状态频道): recall_memory 真实命中才推.
+            // 真实来源: RecallMemoryTool 输出 {"query","found","top"} (tool_bridge.rs);
+            // 只推条目数 + query 关键词, 命中原文 (top) 不进事件 (redacted: true 设计占位).
+            if name == "recall_memory" && r.success {
+                let found = r.output.get("found").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let q = args.get("query").and_then(Value::as_str).unwrap_or("");
+                let _ = st
+                    .events
+                    .send(PresenceEvent::memory_recall(found, q).to_json_line());
+            }
             let body = if r.success {
                 serde_json::to_string(&r.output).unwrap_or_default()
             } else {
@@ -1678,6 +1719,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(index))
         .route("/health", get(health))
         .route("/v1/models", get(list_models))
+        .route("/v1/tools/list", get(tools_list))
         .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/apeireth/grant", post(grant))
         .route("/v1/apeireth/approval-requests", get(approval_requests))
@@ -1689,6 +1731,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest_service(
             "/v1/panel",
             apeireth_api::panel_readonly::panel_router(store_for_panel),
+        )
+        // W6 前端联调: 放开本地跨域 (companion-desktop dev :5199 / Tauri webview)
+        // 允许 GET/POST/OPTIONS + content-type/authorization/x-apeireth-continuity
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::OPTIONS,
+                ])
+                .allow_headers([
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::header::AUTHORIZATION,
+                    axum::http::HeaderName::from_static("x-apeireth-continuity"),
+                ]),
         )
         .with_state(state.clone());
 
@@ -1705,15 +1763,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // daemon 循环与 HTTP 同 task 交替 (daemon 内部 RefCell 跨 await → 非 Send, 不能 spawn)
     let d_app = Arc::clone(&state.app);
     let d_rhythm = rhythm_share;
+    // presence 内心状态频道: daemon_loop 持有 broadcast 发送端 (emotion/initiative/dream)
+    let d_events = state.events.clone();
     tokio::select! {
         r = axum::serve(listener, router) => { r?; }
-        _ = daemon_loop(daemon, rx_interact, d_app, d_rhythm) => {}
+        _ = daemon_loop(daemon, rx_interact, d_app, d_rhythm, d_events) => {}
     }
     Ok(())
 }
 
 /// daemon 常驻循环: 定时 step (做梦/反思/涌现) + 响应互动通知 (喂节律)
 /// + 自成长延伸 (CompanionApp): 反思完成→提炼经验入库; 晋级候选自动成文.
+/// + presence 内心状态频道 (2026-08-21): emotion 心跳 / initiative 决策 / dream 增量 → SSE 广播.
 /// 具体类型 (Delivery trait 私有, 不能作泛型约束); daemon 非 Send, 只在同 task 内用.
 type ServeDaemon = CompanionDaemon<
     CompanionDelivery<ThrottledUtterance<TonalUtterance>, MultiSink>,
@@ -1724,6 +1785,7 @@ async fn daemon_loop(
     mut rx: tokio::sync::mpsc::Receiver<chrono::DateTime<Utc>>,
     app: Arc<CompanionApp>,
     rhythm_share: std::sync::Arc<std::sync::Mutex<Option<RhythmEstimate>>>,
+    events: tokio::sync::broadcast::Sender<String>,
 ) {
     let mut last_cycles: u64 = daemon
         .reflection
@@ -1731,12 +1793,76 @@ async fn daemon_loop(
         .map(|r| r.cycles_completed())
         .unwrap_or(0);
     let mut last_batch_extract = std::time::Instant::now();
+    // presence: initiative 拦下去抖 (同一门控原因不重复推) + dream 增量边界
+    // (last_dream_ts 起点 = 启动时刻: 只报 serve 启动后新发生的做梦, 旧做梦不重播).
+    let mut last_held_gate: Option<InitiativeGate> = None;
+    let mut last_dream_ts: i64 = Utc::now().timestamp();
     let mut ticker = tokio::time::interval(Duration::from_secs(60));
     loop {
         tokio::select! {
             _ = ticker.tick() => {
                 let t0 = std::time::Instant::now();
                 daemon.step().await;
+                // ============ presence 内心状态频道 (真实接线, 0 装 PASS) ============
+                // ① emotion: daemon.awake.emotion 真引擎 PAD 快照 (consciousness
+                //    EmotionEngine) + 三层器官语调 (AwakeCompanion::tone()).
+                //    每 tick 一条心跳 (60s) — 前端内心状态的常驻数据源.
+                let _ = events.send(
+                    PresenceEvent::emotion(&daemon.awake.emotion, Some(daemon.awake.tone()))
+                        .to_json_line(),
+                );
+                // ② initiative: AwakeCompanion 开口决策留痕 (emergence 8 门禁 +
+                //    organs 5 门控, 真实原因枚举 InitiativeGate).
+                //    开口 = 每次都推; 拦下 = 仅原因变化时推 (去抖, 否则每 60s 刷屏).
+                match daemon.awake.last_decision() {
+                    Some(GateDecision::Spoke { action }) => {
+                        last_held_gate = None;
+                        let _ = events.send(
+                            PresenceEvent::initiative_spoke(action.clone()).to_json_line(),
+                        );
+                    }
+                    Some(GateDecision::Held(gate)) => {
+                        if last_held_gate != Some(*gate) {
+                            last_held_gate = Some(*gate);
+                            let _ = events
+                                .send(PresenceEvent::initiative_held(*gate).to_json_line());
+                        }
+                    }
+                    None => {} // 尚未 tick 过 (启动瞬间) — 不推
+                }
+                // ③ dream: daemon.step() 内部 DreamScheduler 已把整合写回真库;
+                //    此处读真库 mem-dream-* 增量 (真实来源 = SQLite, 非回调穿线).
+                //    mem-dream-thought-* 是思维链盘点, 不算整合结果 (dream.rs 注释).
+                {
+                    let new_dreams: Vec<_> = app
+                        .store()
+                        .recent_episodes(app.session(), 20)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|e| e.id.starts_with("mem-dream-"))
+                        .filter(|e| !e.id.starts_with("mem-dream-thought-"))
+                        .filter(|e| e.timestamp > last_dream_ts)
+                        .collect();
+                    if !new_dreams.is_empty() {
+                        let latest_ts = new_dreams
+                            .iter()
+                            .map(|e| e.timestamp)
+                            .max()
+                            .unwrap_or(last_dream_ts);
+                        // 摘要前缀: 最新一条整合内容的前 40 字
+                        // (【做梦整合】/【做梦摘要】 原文开头, 真库读出).
+                        let prefix = new_dreams
+                            .iter()
+                            .max_by_key(|e| e.timestamp)
+                            .map(|e| e.content.chars().take(40).collect::<String>())
+                            .unwrap_or_default();
+                        last_dream_ts = latest_ts;
+                        let _ = events.send(
+                            PresenceEvent::dream(new_dreams.len(), prefix).to_json_line(),
+                        );
+                    }
+                }
+                // ============ presence 段结束 ============
                 // 节律共享 (模块 1 状态感知): 每 tick 更新活跃概率 (UTC 坐标, 与观察自洽)
                 {
                     let now = Utc::now();
@@ -1782,7 +1908,16 @@ async fn daemon_loop(
                 }
                 eprintln!("[daemon-loop] tick done in {:?}", t0.elapsed());
             }
-            Some(at) = rx.recv() => daemon.on_user_message(at),
+            Some(at) = rx.recv() => {
+                daemon.on_user_message(at);
+                // presence emotion: 主人来消息 → 推一条真实 PAD 快照
+                // (chat_completions 的 emotion 通路; PAD 只在本 task 内可达, 见 handler 注释).
+                // 诚实: on_user_message 只喂节律不触情绪事件, 推的是当前真实 PAD (多为基线).
+                let _ = events.send(
+                    PresenceEvent::emotion(&daemon.awake.emotion, Some(daemon.awake.tone()))
+                        .to_json_line(),
+                );
+            }
             else => break,
         }
     }
@@ -1910,6 +2045,24 @@ async fn list_models() -> impl IntoResponse {
         "object": "list",
         "data": [{"id": model(), "object": "model", "created": 0, "owned_by": "minimax"}]
     }))
+}
+
+/// W6 前端联调: GET /v1/tools/list — 真实工具注册表投影 (修契约差距表 G7 缺口).
+/// 数据源 = `tools_schema(st.bridge.registry)` (与 chat 主链路上发给 LLM 的同一真表),
+/// 只读投影为 {name, description, args_schema}; 不做任何执行语义变更.
+async fn tools_list(State(st): State<Arc<AppState>>) -> impl IntoResponse {
+    let tools: Vec<Value> = tools_schema(&st.bridge.registry)
+        .into_iter()
+        .map(|t| {
+            let f = &t["function"];
+            json!({
+                "name": f["name"],
+                "description": f["description"],
+                "args_schema": f["parameters"],
+            })
+        })
+        .collect();
+    Json(json!({"object": "list", "count": tools.len(), "tools": tools}))
 }
 
 #[cfg(test)]
